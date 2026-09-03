@@ -46,7 +46,6 @@
   body:not(.authed) .app-shell { display: none; }
   .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  /* Sidebar (repris de vaultkey-saas-prototype.html) */
   .sidebar {
     width: 240px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
@@ -155,8 +154,8 @@
   .ok { color: var(--success); font-weight: 600; }
   .fail { color: var(--danger); font-weight: 600; }
 
-  /* Topbar du coffre sélectionné (repris de vaultkey-saas-prototype.html) :
-     fil d'Ariane + actions Verrouiller/Importer, au-dessus du reste du
+  /* Topbar du coffre sélectionné : fil d'Ariane + actions
+     Verrouiller/Importer, au-dessus du reste du
      contenu plutôt qu'en pleine largeur de .main (qui garde son padding
      habituel, pas de restructuration du modèle de défilement existant). */
   .topbar {
@@ -180,9 +179,9 @@
   }
   .sync-indicator { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
 
-  /* Table de fichiers façon gestionnaire de fichiers (repris de
-     vaultkey-saas-prototype.html) : pleine largeur, pas de plafond à 640px
-     comme les cartes de réglages, cet écran est volontairement à plat.
+  /* Table de fichiers façon gestionnaire de fichiers : pleine largeur, pas
+     de plafond à 640px comme les cartes de réglages, cet écran est
+     volontairement à plat.
      table-layout:fixed + largeurs de colonnes fixes (colgroup) : sans ça
      (comportement "auto" par défaut), chaque ligne recalcule la largeur de
      ses colonnes en fonction de son propre contenu, ce qui décale les
@@ -242,7 +241,6 @@
   .sync-pending { background: var(--warn-wash); color: var(--warn); }
   .sync-pending .dot { background: var(--warn); }
 
-  /* YubiKey rows + modale (repris de vaultkey-saas-prototype.html) */
   .yk-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-size: 12px; }
   .yk-row .id { flex: 1; font-family: var(--mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .yk-row button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; }
@@ -265,8 +263,8 @@
   .modal-subheading { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
   .modal-subheading.divider { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 
-  /* Modale de déverrouillage (repris de vaultkey-saas-prototype.html) : icône
-     de clé qui pulse pendant l'attente réelle du contact YubiKey, pas une
+  /* Modale de déverrouillage : icône de clé qui pulse pendant l'attente
+     réelle du contact YubiKey, pas une
      animation permanente pendant toute la cérémonie (lecture des enveloppes
      et du manifeste, avant/après le contact, ne pulsent pas). */
   .unlock-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 0 0; }
@@ -300,7 +298,6 @@
   .known-key-btn:hover { background: var(--surface-2); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
-  /* Phrase BIP39 + zone RESET (repris de vaultkey-saas-prototype.html) */
   .seed-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 14px 0;
     padding: 12px; background: var(--surface-2); border-radius: 8px; font-family: var(--mono); font-size: 11px;
@@ -314,17 +311,14 @@
     font-family: var(--mono); margin-bottom: 10px; resize: vertical; min-height: 54px;
   }
 
-  /* Chantier D (road-to-1.0.md) : rail d'icônes sous 860px, repris de
-     vaultkey-saas-prototype.html. Différence avec la maquette : les deux
-     boutons "Importer un coffre"/"Nouveau coffre" y sont un <button> direct
-     (pas de fonctionnalité d'import dans la maquette), ici ils sont
-     enveloppés dans un second <span> à l'intérieur de .nav-label — masquer
-     `.nav-label span` en bloc comme la maquette ferait disparaître ce
-     groupe de boutons avec lui. `:first-child` cible donc seulement le
-     libellé "Coffres" et laisse les boutons visibles. Noms de coffre/texte
-     de bouton remplacés par une infobulle native (`title`, déjà posée côté
-     JS/HTML) : cohérent avec le pattern déjà utilisé partout ailleurs dans
-     cette app pour les affordances icône seule (table de fichiers, topbar). */
+  /* Rail d'icônes sous 860px : masquer `.nav-label span` en bloc ferait
+     disparaître le libellé "Coffres" ET les boutons Importer/Nouveau coffre
+     (les deux boutons sont enveloppés dans un second <span> à l'intérieur
+     de .nav-label). `:first-child` cible donc seulement le libellé et
+     laisse les boutons visibles. Noms de coffre/texte de bouton remplacés
+     par une infobulle native (`title`, déjà posée côté JS/HTML) : cohérent
+     avec le pattern déjà utilisé partout ailleurs dans cette app pour les
+     affordances icône seule (table de fichiers, topbar). */
   @media (max-width: 860px) {
     .sidebar { width: 64px; }
     .brand-name, .brand-sub, .vault-item .name, .nav-label span:first-child { display: none; }
@@ -334,7 +328,6 @@
     .vault-item { justify-content: center; }
   }
 
-  /* Blocage mobile (repris de vaultkey-saas-prototype.html) */
   .mobile-block { display: none; }
   @media (max-width: 620px) {
     .app-shell, .overlay { display: none !important; }
@@ -430,9 +423,9 @@
     </section>
 
     <!-- Écran fichiers volontairement à plat (table + dropzone), sans carte
-         ni titre, ISO avec vaultkey-saas-prototype.html sur ce point (les
-         réglages YubiKey/export qui gardaient le style carte ont depuis
-         déménagé dans la modale "Réglages du coffre", voir plus bas). -->
+         ni titre (les réglages YubiKey/export qui gardaient le style carte
+         ont depuis déménagé dans la modale "Réglages du coffre", voir plus
+         bas). -->
     <div class="disabled" id="filesSection">
       <div id="fileListEmpty" class="desc">Aucun fichier.</div>
       <table class="file-table" id="fileTable" style="display:none;">
@@ -580,9 +573,8 @@
 </div>
 
 <!-- Réglages du coffre sélectionné : YubiKey enregistrées + export, sorties
-     de la vue fichiers (voir road-to-1.0.md, chantier B) pour rejoindre un
-     modale derrière un bouton dédié dans la topbar, plutôt que de rester
-     empilées en cartes sous la table (pas d'équivalent dans la maquette). -->
+     de la vue fichiers pour rejoindre une modale derrière un bouton dédié
+     dans la topbar, plutôt que de rester empilées en cartes sous la table. -->
 <div class="overlay" id="vaultSettingsOverlay">
   <div class="modal wide">
     <h3>Réglages du coffre</h3>
@@ -646,9 +638,9 @@
   const VAULT_LOCK_CLOSED = '<svg width="11" height="11" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const VAULT_LOCK_OPEN = '<svg width="11" height="11" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" fill="currentColor"/><path d="M7 11V7a5 5 0 019.9-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
-  // Icônes de type de fichier dans la table (repris de vaultkey-saas-prototype.html) :
-  // par extension, générique sinon — pas de détection de type plus fine (pas de
-  // besoin produit identifié au-delà de distinguer une archive d'un document).
+  // Icônes de type de fichier dans la table : par extension, générique sinon
+  // — pas de détection de type plus fine (pas de besoin produit identifié
+  // au-delà de distinguer une archive d'un document).
   const FILE_ICON_GENERIC = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h9l7 7v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>';
   const FILE_ICON_ARCHIVE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
   const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);

@@ -35,8 +35,8 @@ impl Storage {
         validate_id(vault_id).then(|| self.vault_dir(vault_id).join("manifest.enc"))
     }
 
-    /// Extension du PRD §5.1 (non précisé explicitement par le PRD, voir
-    /// CLAUDE.md) : les enveloppes de clé (§5.3) vivent à côté du manifeste.
+    /// Extension du PRD §5.1 (non précisé explicitement par le PRD) : les
+    /// enveloppes de clé (§5.3) vivent à côté du manifeste.
     pub fn envelopes_path(&self, vault_id: &str) -> Option<PathBuf> {
         validate_id(vault_id).then(|| self.vault_dir(vault_id).join("envelopes.json"))
     }

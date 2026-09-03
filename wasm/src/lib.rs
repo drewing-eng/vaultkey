@@ -1,8 +1,5 @@
-//! Étapes 2, 3 et 5 du PRD v3 (§9) : prouver que le cœur Rust compile en WASM
-//! et tourne dans un navigateur (étape 2), qu'un vrai secret PRF (dérivé côté
-//! JS par `spikes/webauthn-prf-spike/`) peut envelopper/déballer une clé de
-//! test (étape 3), puis exposer la vraie surface du `Vault` pour le flux
-//! complet sur un coffre codé en dur (étape 5, `web/index.html`).
+//! Binding wasm-bindgen du cœur Rust (`vaultkey_core::Vault`) pour le vrai
+//! front (`web/index.html`) : voir `WasmVault` ci-dessous.
 
 use vaultkey_core::{Vault, VaultKeyError};
 use wasm_bindgen::prelude::*;
@@ -23,44 +20,6 @@ fn bytes32(bytes: &[u8], field: &str) -> Result<[u8; 32], JsValue> {
     bytes
         .try_into()
         .map_err(|_| JsValue::from_str(&format!("{field} doit faire exactement 32 octets")))
-}
-
-/// Fait tourner un aller-retour complet du cœur cryptographique à l'intérieur
-/// du moteur WASM du navigateur : crée un coffre, l'autorise avec `wrap_key`
-/// (32 octets — en pratique le résultat d'une évaluation PRF WebAuthn pour un
-/// sel donné, obtenu côté JS), chiffre `plaintext`, exporte et verrouille le
-/// coffre, le rouvre à partir de ses seules enveloppes, et déchiffre à
-/// nouveau. Retourne le texte déchiffré : s'il est identique à l'entrée, tout
-/// le pipeline (enveloppe scellée avec le vrai secret PRF, AES-GCM, manifeste)
-/// a fonctionné en WASM de bout en bout. Conservé tel quel depuis l'étape 2/3
-/// (le spike `spikes/webauthn-prf-spike/` en dépend encore) ; le flux réel de
-/// l'étape 5 passe par `WasmVault` ci-dessous, pas par cette fonction.
-#[wasm_bindgen]
-pub fn demo_roundtrip(wrap_key: &[u8], plaintext: &str) -> Result<String, JsValue> {
-    let wrap_key = bytes32(wrap_key, "wrap_key")?;
-    let salt = vaultkey_core::generate_salt(); // sans importance ici : ce test ne parle pas à WebAuthn
-
-    let mut vault = Vault::create();
-    vault
-        .add_yubikey("demo-credential", &salt, &wrap_key)
-        .map_err(to_js_error)?;
-
-    let (_blob_id, ciphertext) = vault
-        .add_file("demo.txt", plaintext.as_bytes())
-        .map_err(to_js_error)?;
-    let encrypted_manifest = vault.export_encrypted_manifest().map_err(to_js_error)?;
-    vault.lock();
-
-    let mut reopened = Vault::from_envelopes(vault.envelopes().clone());
-    reopened
-        .unlock_with_yubikey("demo-credential", &wrap_key, &encrypted_manifest)
-        .map_err(to_js_error)?;
-
-    let decrypted = reopened
-        .read_file("demo.txt", &ciphertext)
-        .map_err(to_js_error)?;
-
-    String::from_utf8(decrypted).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Génère un sel frais (32 octets, CSPRNG du cœur Rust) à utiliser comme

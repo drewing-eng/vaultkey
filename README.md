@@ -49,7 +49,7 @@ Le cache applicatif du service worker (code) est strictement distinct du cache O
 
 ## État actuel du projet
 
-Les étapes 1 à 9 de l'ordre de développement du PRD (§9) sont faites et validées sur du matériel réel (YubiKey physique, conteneur Docker, vrai navigateur) — voir `CLAUDE.md` pour le détail de chaque étape et les décisions de conception prises en cours de route.
+Les étapes 1 à 9 de l'ordre de développement du PRD (§9) sont faites et validées sur du matériel réel (YubiKey physique, conteneur Docker, vrai navigateur).
 
 Le premier critère d'acceptation du PRD (§8 : « `docker compose up` démarre une instance fonctionnelle sans étape manuelle supplémentaire ») est désormais respecté à la lettre : un seul conteneur sert l'API et le frontend depuis la même origine.
 
