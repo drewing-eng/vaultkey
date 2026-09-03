@@ -1,6 +1,12 @@
 services:
   vaultkey:
+    # build: présent pour le dev local (`docker compose up --build` compile
+    # depuis les sources, comme avant). image: présent pour la prod (`docker
+    # compose pull && docker compose up -d` récupère le binaire déjà
+    # construit par la CI GitHub Actions, sans rien compiler sur la machine
+    # cible). Les deux coexistent sur le même service, aucun fichier séparé.
     build: .
+    image: ghcr.io/drewing-eng/vaultkey:latest
     ports:
       - "8080:8080"
     volumes:
