@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultKey</title>
+<style>
+  :root {
+    --bg: #FAFAF9;
+    --surface: #FFFFFF;
+    --surface-2: #F2F2F0;
+    --border: #E6E6E3;
+    --border-strong: #D6D6D2;
+    --text: #16161A;
+    --text-2: #63636A;
+    --text-3: #98989E;
+    --accent: #5B5FEF;
+    --accent-hover: #4D51E0;
+    --accent-wash: #EDEDFD;
+    --success: #1F7A4D;
+    --success-wash: #E3F1E8;
+    --warn: #8A5A12;
+    --warn-wash: #FBEEDD;
+    --danger: #B3261E;
+    --danger-wash: #FBEAE9;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+  }
+  [data-theme="dark"] {
+    --bg: #0B0B0D;
+    --surface: #131316;
+    --surface-2: #1A1A1E;
+    --border: #232327;
+    --border-strong: #2E2E33;
+    --text: #F2F2F0;
+    --text-2: #9B9BA1;
+    --text-3: #616166;
+    --accent: #6D71F5;
+    --accent-hover: #7D80F7;
+    --accent-wash: #191A3A;
+    --success: #4CB37E;
+    --success-wash: #14251C;
+    --warn: #D6A24E;
+    --warn-wash: #2A2013;
+    --danger: #E5665F;
+    --danger-wash: #2C1917;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.15s ease;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 16px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand svg { flex-shrink: 0; color: var(--accent); }
+  .brand-name { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand-sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
+
+  .theme-switch {
+    margin-left: auto;
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .theme-switch:hover { background: var(--surface-2); }
+
+  .vault-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 8px;
+  }
+  .nav-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+    padding: 6px 8px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .nav-label button {
+    background: none; border: none; color: var(--text-3); cursor: pointer;
+    width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+  }
+  .nav-label button:hover { background: var(--surface-2); color: var(--text); }
+
+  .vault-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-2);
+    margin-bottom: 1px;
+  }
+  .vault-item:hover { background: var(--surface-2); color: var(--text); }
+  .vault-item.active { background: var(--accent-wash); color: var(--accent); font-weight: 500; }
+  .vault-item.active .status-dot.locked { background: var(--accent); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.unlocked { background: var(--success); }
+  .status-dot.locked { background: var(--text-3); }
+  .vault-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding: 8px;
+  }
+  .sidebar-footer .vault-item { color: var(--text-2); }
+
+  /* ---------- Main ---------- */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .topbar {
+    height: 52px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 10px;
+  }
+  .breadcrumb { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+  .breadcrumb .current { color: var(--text); font-weight: 500; }
+  .topbar-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  .btn {
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .btn.danger-outline:hover { background: var(--danger-wash); }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .content { flex: 1; overflow-y: auto; padding: 20px 24px 40px; }
+
+  /* File table */
+  .file-table { width: 100%; border-collapse: collapse; }
+  .file-table th {
+    text-align: left;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+    font-weight: 500;
+    padding: 0 10px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-table td {
+    padding: 9px 10px;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-2);
+  }
+  .file-table tr:hover td { background: var(--surface-2); }
+  .file-name { display: flex; align-items: center; gap: 9px; color: var(--text); }
+  .file-name svg { color: var(--text-3); flex-shrink: 0; }
+
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  .sync-badge .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .sync-synced { background: var(--success-wash); color: var(--success); }
+  .sync-synced .dot { background: var(--success); }
+  .sync-pending { background: var(--warn-wash); color: var(--warn); }
+  .sync-pending .dot { background: var(--warn); }
+  .sync-offline { background: var(--surface-2); color: var(--text-3); }
+  .sync-offline .dot { background: var(--text-3); }
+
+  .dropzone {
+    margin-top: 14px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 10px;
+    padding: 22px;
+    text-align: center;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+
+  /* Unlock state */
+  .unlock-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 6px 0 0;
+  }
+  .key-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .key-icon.waiting::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 16px;
+    border: 1.5px solid var(--accent);
+    opacity: 0.5;
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(0.92); opacity: 0.6; } 100% { transform: scale(1.3); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .key-icon.waiting::before { animation: none; } }
+  .unlock-screen h2 { font-size: 14px; font-weight: 600; margin: 0 0 5px; }
+  .unlock-screen p { font-size: 12.5px; color: var(--text-2); margin: 0 0 18px; max-width: 280px; }
+  .unlock-state { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); }
+
+  /* Overlay / modal */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 20;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    width: 380px;
+    max-width: 92vw;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  }
+  .modal h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  .modal .desc { font-size: 12px; color: var(--text-2); margin: 0 0 16px; line-height: 1.5; }
+
+  .yk-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .yk-row .id { flex: 1; font-family: var(--mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .yk-row button { background: none; border: none; color: var(--text-3); cursor: pointer; }
+  .yk-row button:hover { color: var(--danger); }
+
+  .reset-zone {
+    margin-top: 16px;
+    padding: 12px;
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    background: var(--danger-wash);
+  }
+  .reset-zone p { font-size: 11.5px; color: var(--text); margin: 0 0 10px; line-height: 1.5; }
+
+  .backup-option {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 11px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .backup-option:hover { border-color: var(--border-strong); }
+  .backup-option input { margin-top: 2px; accent-color: var(--accent); }
+  .backup-option .label { font-size: 12.5px; font-weight: 500; }
+  .backup-option .sub { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+  .seed-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 14px 0;
+    padding: 12px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .seed-grid span { color: var(--text-3); }
+
+  .footer-note { font-size: 11px; color: var(--text-3); margin-top: 14px; line-height: 1.5; }
+
+  .mobile-block { display: none; }
+
+  @media (max-width: 860px) {
+    .sidebar { width: 64px; }
+    .brand-name, .brand-sub, .vault-item .name, .nav-label span { display: none; }
+    .brand { justify-content: center; }
+    .theme-switch { margin-left: 0; }
+    .vault-item { justify-content: center; }
+  }
+
+  @media (max-width: 620px) {
+    .app-shell { display: none !important; }
+    .mobile-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100vw;
+      text-align: center;
+      padding: 32px;
+    }
+    .mobile-block .key-icon { margin-bottom: 20px; }
+    .mobile-block h2 { font-size: 15px; margin: 0 0 8px; }
+    .mobile-block p { font-size: 12.5px; color: var(--text-2); max-width: 300px; line-height: 1.6; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="app-shell" style="display:flex; width:100%; height:100%;">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="6" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v3m0 0a2 2 0 100 4 2 2 0 000-4z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <div>
+        <div class="brand-name">VaultKey</div>
+        <div class="brand-sub">v1.0.0-dev</div>
+      </div>
+      <button class="theme-switch" onclick="toggleTheme()" id="themeBtn" title="Basculer thème">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <nav class="vault-nav">
+      <div class="nav-label"><span>Coffres</span><button title="Nouveau coffre" onclick="openCreateVault()">+</button></div>
+
+      <div class="vault-item" data-vault="perso" onclick="selectVault('perso')">
+        <span class="status-dot locked"></span><span class="name">Documents perso</span>
+      </div>
+      <div class="vault-item active" data-vault="factures" onclick="selectVault('factures')">
+        <span class="status-dot unlocked"></span><span class="name">Factures 2026</span>
+      </div>
+      <div class="vault-item" data-vault="archives" onclick="selectVault('archives')">
+        <span class="status-dot locked"></span><span class="name">Archives</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="vault-item" onclick="openSettings()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="name">Réglages du coffre</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="breadcrumb"><span>Factures 2026</span><span>/</span><span class="current">2026</span></div>
+      <div class="topbar-actions">
+        <button class="btn ghost" onclick="lockVault()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke-linecap="round"/></svg>
+          Verrouiller
+        </button>
+        <button class="btn primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+          Importer
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+      <table class="file-table">
+        <thead>
+          <tr><th style="width:50%">Nom</th><th>Taille</th><th>Modifié</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="file-name"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h9l7 7v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>facture_janvier.pdf</td>
+            <td class="mono">214 KB</td>
+            <td class="mono">25 août 2026</td>
+            <td><span class="sync-badge sync-synced"><span class="dot"></span>Synchronisé</span></td>
+          </tr>
+          <tr>
+            <td class="file-name"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h9l7 7v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>facture_fevrier.pdf</td>
+            <td class="mono">198 KB</td>
+            <td class="mono">25 août 2026</td>
+            <td><span class="sync-badge sync-pending"><span class="dot"></span>En attente</span></td>
+          </tr>
+          <tr>
+            <td class="file-name"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>archive_q1.zip</td>
+            <td class="mono">4.1 MB</td>
+            <td class="mono">12 août 2026</td>
+            <td><span class="sync-badge sync-offline"><span class="dot"></span>Local uniquement</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="dropzone">Glisser des fichiers ici, ou cliquer sur Importer</div>
+    </div>
+  </main>
+</div>
+
+<div class="mobile-block">
+  <div class="key-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="12" r="4"/><path d="M11.5 12H21M17 12v3M14 12v2" stroke-linecap="round"/></svg></div>
+  <h2>Ouvre VaultKey sur un ordinateur</h2>
+  <p>Le déverrouillage par YubiKey physique fonctionne dans un navigateur desktop. Le support mobile n'est pas disponible pour le moment, limite de plateforme, pas de cette app.</p>
+</div>
+
+<!-- Unlock overlay -->
+<div class="overlay" id="unlockOverlay">
+  <div class="modal">
+    <div class="unlock-screen">
+      <div class="key-icon waiting" id="keyIcon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="12" r="4"/><path d="M11.5 12H21M17 12v3M14 12v2" stroke-linecap="round"/></svg></div>
+      <h2 id="unlockTitle">Déverrouiller « Documents perso »</h2>
+      <p>Branchez votre YubiKey et touchez-la pour continuer.</p>
+      <div class="unlock-state" id="unlockState">en attente du contact YubiKey…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <h3>Réglages — Factures 2026</h3>
+    <div class="desc">YubiKey autorisées à déverrouiller ce coffre.</div>
+
+    <div class="yk-row">
+      <span class="status-dot unlocked"></span>
+      <span class="id">credential_8f21…a4c3</span>
+      <button title="Retirer" disabled>✕</button>
+    </div>
+    <div class="yk-row">
+      <span class="status-dot locked"></span>
+      <span class="id">credential_2b09…f710</span>
+      <button title="Retirer" onclick="simulateLastKey()">✕</button>
+    </div>
+
+    <button class="btn" style="width:100%; justify-content:center; margin-top:6px;">+ Ajouter une YubiKey</button>
+
+    <div class="reset-zone" id="resetZone" style="display:none;">
+      <p>Une seule YubiKey restante sur ce coffre. La retirer nécessite d'abord de déverrouiller avec elle, puis affiche l'option de réinitialisation complète de ce coffre.</p>
+      <button class="btn danger-outline" style="width:100%; justify-content:center;">Réinitialiser ce coffre</button>
+    </div>
+
+    <div class="footer-note">Aucune autre méthode ne permet de contourner ces clés. La perte de toutes les YubiKey enregistrées, sans phrase de récupération générée à la création, rend ce coffre définitivement inaccessible.</div>
+    <div style="text-align:right; margin-top:14px;"><button class="btn ghost" onclick="closeSettings()">Fermer</button></div>
+  </div>
+</div>
+
+<!-- Create vault overlay -->
+<div class="overlay" id="createOverlay">
+  <div class="modal">
+    <h3>Nouveau coffre</h3>
+    <div class="desc">Avant de stocker un premier fichier, choisis comment ce coffre pourra être récupéré si une YubiKey est perdue.</div>
+
+    <label class="backup-option">
+      <input type="radio" name="backup" checked>
+      <div><div class="label">Enregistrer une deuxième YubiKey maintenant</div><div class="sub">Recommandé. Deux clés indépendantes, aucune n'est un point unique de défaillance.</div></div>
+    </label>
+    <label class="backup-option">
+      <input type="radio" name="backup">
+      <div><div class="label">Générer une phrase de 24 mots</div><div class="sub">Affichée une seule fois, jamais reconsultable. Choix définitif pour ce coffre.</div></div>
+    </label>
+    <label class="backup-option">
+      <input type="radio" name="backup">
+      <div><div class="label">Aucune sauvegarde, je comprends le risque</div><div class="sub">La perte de l'unique YubiKey enregistrée rendra ce coffre définitivement inaccessible.</div></div>
+    </label>
+
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="btn ghost" onclick="closeCreateVault()">Annuler</button>
+      <button class="btn primary" onclick="showSeed()">Continuer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Seed reveal overlay -->
+<div class="overlay" id="seedOverlay">
+  <div class="modal">
+    <h3>Phrase de récupération</h3>
+    <div class="desc">Notez ces 24 mots sur support physique. Cet écran ne s'affichera plus jamais.</div>
+    <div class="seed-grid">
+      <span>01. glacier</span><span>02. proton</span><span>03. amande</span>
+      <span>04. brique</span><span>05. cactus</span><span>06. drone</span>
+      <span>07. écorce</span><span>08. flamme</span><span>09. givre</span>
+      <span>10. hameau</span><span>11. iceberg</span><span>12. jonque</span>
+    </div>
+    <div class="footer-note">Aperçu tronqué pour cette maquette — 24 mots complets dans la version réelle.</div>
+    <div style="text-align:right; margin-top:14px;"><button class="btn primary" onclick="closeSeed()">J'ai noté ces mots</button></div>
+  </div>
+</div>
+
+<script>
+function toggleTheme() {
+  const b = document.body;
+  b.dataset.theme = b.dataset.theme === 'dark' ? 'light' : 'dark';
+}
+function selectVault(id) {
+  document.querySelectorAll('.vault-item[data-vault]').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.vault-item[data-vault="${id}"]`).classList.add('active');
+  if (id !== 'factures') openUnlock(id);
+}
+function openUnlock(id) {
+  const names = { perso: 'Documents perso', archives: 'Archives' };
+  document.getElementById('unlockTitle').textContent = `Déverrouiller « ${names[id]} »`;
+  document.getElementById('unlockState').textContent = 'en attente du contact YubiKey…';
+  document.getElementById('keyIcon').classList.add('waiting');
+  document.getElementById('unlockOverlay').classList.add('open');
+  setTimeout(() => { document.getElementById('unlockState').textContent = 'clé détectée, lecture…'; }, 900);
+  setTimeout(() => { document.getElementById('unlockOverlay').classList.remove('open'); }, 2000);
+}
+function lockVault() { alert('Coffre verrouillé — maquette, aucune action réelle.'); }
+function openSettings() { document.getElementById('settingsOverlay').classList.add('open'); }
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); document.getElementById('resetZone').style.display = 'none'; }
+function simulateLastKey() { document.getElementById('resetZone').style.display = 'block'; }
+function openCreateVault() { document.getElementById('createOverlay').classList.add('open'); }
+function closeCreateVault() { document.getElementById('createOverlay').classList.remove('open'); }
+function showSeed() {
+  const seedChoice = document.querySelectorAll('input[name="backup"]')[1].checked;
+  closeCreateVault();
+  if (seedChoice) document.getElementById('seedOverlay').classList.add('open');
+}
+function closeSeed() { document.getElementById('seedOverlay').classList.remove('open'); }
+</script>
+
+</body>
+</html>

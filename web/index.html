@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultKey</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0B0B0D">
+<style>
+  :root {
+    --bg: #FAFAF9; --surface: #FFFFFF; --surface-2: #F2F2F0;
+    --border: #E6E6E3; --border-strong: #D6D6D2;
+    --text: #16161A; --text-2: #63636A; --text-3: #98989E;
+    --accent: #5B5FEF; --accent-hover: #4D51E0; --accent-wash: #EDEDFD;
+    --success: #1F7A4D; --success-wash: #E3F1E8;
+    --warn: #8A5A12; --warn-wash: #FBEEDD;
+    --danger: #B3261E; --danger-wash: #FBEAE9;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+  }
+  [data-theme="dark"] {
+    --bg: #0B0B0D; --surface: #131316; --surface-2: #1A1A1E;
+    --border: #232327; --border-strong: #2E2E33;
+    --text: #F2F2F0; --text-2: #9B9BA1; --text-3: #616166;
+    --accent: #6D71F5; --accent-hover: #7D80F7; --accent-wash: #191A3A;
+    --success: #4CB37E; --success-wash: #14251C;
+    --warn: #D6A24E; --warn-wash: #2A2013;
+    --danger: #E5665F; --danger-wash: #2C1917;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; display: flex; height: 100vh; overflow: hidden;
+  }
+  /* Sidebar + contenu principal côte à côte (comme body seul le faisait
+     avant l'ajout de ce wrapper) — sans ce display:flex explicite, .sidebar
+     et .main s'empilent verticalement comme des blocs normaux. */
+  .app-shell { display: flex; width: 100%; height: 100%; }
+  /* Tant que la connexion au serveur (auth par YubiKey, distincte du
+     déverrouillage d'un coffre) n'est pas établie, l'app reste cachée
+     derrière #authGate — évite un flash du contenu avant que le JS ait pu
+     trancher. */
+  body:not(.authed) .app-shell { display: none; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* Sidebar (repris de vaultkey-saas-prototype.html) */
+  .sidebar {
+    width: 240px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--border); }
+  .brand svg { flex-shrink: 0; }
+  .brand-name { font-size: 13.5px; font-weight: 600; }
+  .brand-sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
+  .theme-toggle {
+    margin-left: auto; width: 24px; height: 24px; padding: 0; border-radius: 6px;
+    border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .theme-toggle:hover { background: var(--surface-2); color: var(--text); }
+  .nav-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3);
+    padding: 10px 8px 6px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-label button {
+    background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 15px;
+    width: 20px; height: 20px; border-radius: 4px;
+  }
+  .nav-label button:hover { background: var(--surface-2); color: var(--text); }
+  .vault-nav { flex: 1; overflow-y: auto; padding: 0 8px; }
+  .vault-item {
+    display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px;
+    cursor: pointer; font-size: 12.5px; color: var(--text-2); margin-bottom: 1px;
+  }
+  .vault-item:hover { background: var(--surface-2); color: var(--text); }
+  .vault-item.active { background: var(--accent-wash); color: var(--accent); font-weight: 500; }
+  .vault-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-footer { border-top: 1px solid var(--border); padding: 10px; }
+  /* Réinitialise le chrome natif du bouton pour les deux actions du pied de
+     sidebar (Paramètres, Déconnexion), stylées en .vault-item comme le reste
+     de la sidebar : ce sont de vrais boutons HTML, pas des div cliquables
+     comme dans la maquette, pour garder le focus clavier natif. */
+  .sidebar-footer .vault-item { background: none; border: none; width: 100%; text-align: left; font-family: inherit; }
+  /* Séparateur porté par .modal-subheading.divider juste au-dessus (voir la
+     modale Paramètres de l'app) : .app-status n'a plus besoin du sien, un
+     seul bloc restant désormais, toujours précédé de cette sous-rubrique. */
+  .app-status { display: flex; align-items: center; gap: 6px; }
+  .app-status .label { flex: 1; font-size: 10.5px; color: var(--text-3); }
+  .app-status button { font-size: 10.5px; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); cursor: pointer; }
+  .app-status button:hover { background: var(--surface-2); color: var(--text); }
+  .update-banner {
+    display: none; align-items: center; gap: 8px; margin: 0 0 14px; padding: 9px 12px;
+    border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-wash);
+    color: var(--accent); font-size: 12px; max-width: 640px;
+  }
+  .update-banner.open { display: flex; }
+  .update-banner button { margin-left: auto; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; padding: 32px 28px 60px; }
+  .empty-state { color: var(--text-3); font-size: 13px; margin-top: 60px; text-align: center; }
+
+  /* Icône de statut par coffre dans la sidebar (renderVaultNav) : cadenas
+     ouvert vert si déverrouillé, fermé gris sinon. Remplace l'ancien simple
+     point coloré (.status-dot), à la demande de l'utilisateur. */
+  .vault-lock-icon { flex-shrink: 0; display: inline-flex; }
+  .vault-lock-icon.locked { color: var(--text-3); }
+  .vault-lock-icon.unlocked { color: var(--success); }
+
+  section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 14px; max-width: 640px;
+  }
+  section h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  /* Générique (pas juste "section .desc") : réutilisé par #fileListEmpty,
+     en dehors de toute carte. */
+  .desc { font-size: 12px; color: var(--text-2); margin: 0 0 14px; line-height: 1.5; }
+  /* Sélecteur générique (pas juste "section.disabled") : l'écran fichiers
+     (topbar + table + dropzone) est volontairement à plat, sans carte, donc
+     ses conteneurs sont des div ordinaires, pas des balises section, mais
+     la même bascule verrouillé/déverrouillé doit quand même s'y appliquer. */
+  .disabled { opacity: 0.45; pointer-events: none; }
+
+  label.field { display: block; font-size: 11.5px; color: var(--text-2); margin: 0 0 4px; }
+  input[type=text], input[type=password] {
+    width: 100%; font-size: 12.5px; padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--border-strong); background: var(--bg); color: var(--text);
+    font-family: var(--mono); margin-bottom: 10px;
+  }
+
+  .btn {
+    font-size: 12.5px; font-weight: 500; padding: 7px 14px; border-radius: 7px;
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Ligne de statut courte (remplace un ancien encadré type "console de
+     debug") : une phrase à la fois, jamais un historique qui s'accumule.
+     Vide et invisible tant qu'il n'y a rien à dire — pas de placeholder du
+     type "(pas encore lancé)". */
+  .status-line {
+    font-size: 12px; color: var(--text-2); margin: 8px 0 0;
+    overflow-wrap: break-word;
+  }
+  .status-line:empty { display: none; margin: 0; }
+  .ok { color: var(--success); font-weight: 600; }
+  .fail { color: var(--danger); font-weight: 600; }
+
+  /* Topbar du coffre sélectionné (repris de vaultkey-saas-prototype.html) :
+     fil d'Ariane + actions Verrouiller/Importer, au-dessus du reste du
+     contenu plutôt qu'en pleine largeur de .main (qui garde son padding
+     habituel, pas de restructuration du modèle de défilement existant). */
+  .topbar {
+    display: flex; align-items: center; gap: 10px; padding-bottom: 14px;
+    margin-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  .topbar-info { display: flex; flex-direction: column; gap: 2px; }
+  .breadcrumb { font-size: 13px; font-weight: 500; color: var(--text); }
+  /* État verrouillé/déverrouillé en sous-titre discret : le point coloré
+     par coffre existe déjà dans la sidebar (renderVaultNav), pas la peine
+     de le dupliquer ici, seul le texte (utile aussi comme ligne de retour
+     après une action : reset, création) reste. */
+  .topbar-status { font-size: 11px; color: var(--text-3); }
+  .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  /* Groupe des icônes utilitaires (sync, réglages), séparé visuellement des
+     deux actions principales (Verrouiller/Importer) par une fine bordure,
+     pour que la topbar ne se lise pas comme une rangée de boutons en vrac. */
+  .topbar-utility {
+    display: flex; align-items: center; gap: 4px;
+    padding-right: 10px; margin-right: 2px; border-right: 1px solid var(--border);
+  }
+  .sync-indicator { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+
+  /* Table de fichiers façon gestionnaire de fichiers (repris de
+     vaultkey-saas-prototype.html) : pleine largeur, pas de plafond à 640px
+     comme les cartes de réglages, cet écran est volontairement à plat.
+     table-layout:fixed + largeurs de colonnes fixes (colgroup) : sans ça
+     (comportement "auto" par défaut), chaque ligne recalcule la largeur de
+     ses colonnes en fonction de son propre contenu, ce qui décale les
+     colonnes d'une ligne à l'autre et empêche le survol de remplir toute la
+     largeur de la ligne (bug remonté par l'utilisateur). Tout dépassement de
+     contenu est tronqué avec une ellipse plutôt que d'élargir la colonne. */
+  .file-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .file-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-3); font-weight: 500; padding: 0 10px 8px; border-bottom: 1px solid var(--border);
+  }
+  .file-table td {
+    padding: 9px 10px; font-size: 12.5px; border-bottom: 1px solid var(--border); color: var(--text-2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .file-table tr:last-child td { border-bottom: none; }
+  .file-table tbody tr:hover { background: var(--surface-2); }
+  /* .file-name et .actions-group habillent un <span> ENFANT du <td>, jamais
+     le <td> lui-même : mettre display:flex directement sur un élément
+     display:table-cell le sort du modèle de layout de table (il n'est plus
+     étiré à la hauteur commune de la ligne), sa bordure colle alors à son
+     propre contenu au lieu de suivre la hauteur réelle de la ligne —
+     décalage vertical visible entre les bordures des colonnes d'une même
+     ligne, bug remonté par l'utilisateur avec capture d'écran à l'appui. */
+  .file-name { display: flex; align-items: center; gap: 9px; color: var(--text); overflow: hidden; }
+  .file-name svg { color: var(--text-3); flex-shrink: 0; }
+  .file-name span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-table .actions { overflow: visible; }
+  .actions-group { display: flex; gap: 2px; justify-content: flex-end; }
+
+  /* Boutons icône seule (actions par ligne de fichier, utilitaires de
+     topbar) : pas de bouton texte "Télécharger" pleine largeur comme avant,
+     la maquette n'a d'ailleurs aucune action par ligne, celle-ci est une
+     extension fonctionnelle réelle assumée au-delà de la maquette. */
+  .icon-btn {
+    background: none; border: none; color: var(--text-3); cursor: pointer;
+    padding: 5px; border-radius: 6px; display: inline-flex; align-items: center;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+  .icon-btn.danger:hover { background: var(--danger-wash); color: var(--danger); }
+  .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .icon-btn:disabled:hover { background: none; color: var(--text-3); }
+
+  .dropzone {
+    margin-top: 14px; border: 1.5px dashed var(--border-strong); border-radius: 10px;
+    padding: 22px; text-align: center; color: var(--text-3); font-size: 12px;
+  }
+  .dropzone.drag-over { border-color: var(--accent); color: var(--accent); background: var(--accent-wash); }
+
+  .sync-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 500;
+  }
+  .sync-badge .dot { width: 5px; height: 5px; border-radius: 50%; }
+  .sync-synced { background: var(--success-wash); color: var(--success); }
+  .sync-synced .dot { background: var(--success); }
+  .sync-pending { background: var(--warn-wash); color: var(--warn); }
+  .sync-pending .dot { background: var(--warn); }
+
+  /* YubiKey rows + modale (repris de vaultkey-saas-prototype.html) */
+  .yk-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-size: 12px; }
+  .yk-row .id { flex: 1; font-family: var(--mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .yk-row button { background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; }
+  .yk-row button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .yk-row button:not(:disabled):hover { color: var(--danger); }
+
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 20; }
+  .overlay.open { display: flex; }
+  .modal { width: 400px; max-width: 92vw; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.35); }
+  /* Modales de type "réglages" (listes de lignes, plusieurs groupes empilés :
+     appareils autorisés, réglages d'un coffre) : plus larges que les modales
+     de flux ponctuel (création de coffre, connexion), qui restent à 400px. */
+  .modal.wide { width: 560px; }
+  .modal h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  .modal .desc { font-size: 12px; color: var(--text-2); margin: 0 0 16px; line-height: 1.5; }
+  /* Sous-groupe à l'intérieur d'une modale (ex. "YubiKey enregistrées" et
+     "Export" dans la modale Réglages du coffre) : même poids visuel qu'un
+     titre de carte (section h2), sans en être une, la modale fait déjà
+     office de carte. */
+  .modal-subheading { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  .modal-subheading.divider { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+  /* Modale de déverrouillage (repris de vaultkey-saas-prototype.html) : icône
+     de clé qui pulse pendant l'attente réelle du contact YubiKey, pas une
+     animation permanente pendant toute la cérémonie (lecture des enveloppes
+     et du manifeste, avant/après le contact, ne pulsent pas). */
+  .unlock-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6px 0 0; }
+  .key-icon {
+    width: 52px; height: 52px; border-radius: 14px; background: var(--surface-2);
+    border: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
+    color: var(--accent); margin-bottom: 18px; position: relative;
+  }
+  .key-icon.waiting::before {
+    content: ""; position: absolute; inset: -5px; border-radius: 16px;
+    border: 1.5px solid var(--accent); opacity: 0.5;
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(0.92); opacity: 0.6; } 100% { transform: scale(1.3); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .key-icon.waiting::before { animation: none; } }
+  .unlock-screen h2 { font-size: 14px; font-weight: 600; margin: 0 0 5px; }
+  .unlock-screen p { font-size: 12.5px; color: var(--text-2); margin: 0 0 18px; max-width: 280px; }
+  .unlock-state { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); min-height: 14px; }
+
+  .backup-option { display: flex; align-items: flex-start; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; margin-bottom: 8px; cursor: pointer; }
+  .backup-option:hover { border-color: var(--border-strong); }
+  .backup-option input { margin-top: 2px; accent-color: var(--accent); }
+  .backup-option .label { font-size: 12.5px; font-weight: 500; }
+  .backup-option .sub { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+  .known-key-btn {
+    display: block; width: 100%; text-align: left; padding: 9px 10px; margin-bottom: 6px;
+    border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface);
+    color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  .known-key-btn:hover { background: var(--surface-2); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+  /* Phrase BIP39 + zone RESET (repris de vaultkey-saas-prototype.html) */
+  .seed-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 14px 0;
+    padding: 12px; background: var(--surface-2); border-radius: 8px; font-family: var(--mono); font-size: 11px;
+  }
+  .seed-grid span { color: var(--text-3); }
+  .reset-zone { margin-top: 16px; padding: 12px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-wash); }
+  .reset-zone p { font-size: 11.5px; color: var(--text); margin: 0 0 10px; line-height: 1.5; }
+  textarea {
+    width: 100%; font-size: 12.5px; padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--border-strong); background: var(--bg); color: var(--text);
+    font-family: var(--mono); margin-bottom: 10px; resize: vertical; min-height: 54px;
+  }
+
+  /* Chantier D (road-to-1.0.md) : rail d'icônes sous 860px, repris de
+     vaultkey-saas-prototype.html. Différence avec la maquette : les deux
+     boutons "Importer un coffre"/"Nouveau coffre" y sont un <button> direct
+     (pas de fonctionnalité d'import dans la maquette), ici ils sont
+     enveloppés dans un second <span> à l'intérieur de .nav-label — masquer
+     `.nav-label span` en bloc comme la maquette ferait disparaître ce
+     groupe de boutons avec lui. `:first-child` cible donc seulement le
+     libellé "Coffres" et laisse les boutons visibles. Noms de coffre/texte
+     de bouton remplacés par une infobulle native (`title`, déjà posée côté
+     JS/HTML) : cohérent avec le pattern déjà utilisé partout ailleurs dans
+     cette app pour les affordances icône seule (table de fichiers, topbar). */
+  @media (max-width: 860px) {
+    .sidebar { width: 64px; }
+    .brand-name, .brand-sub, .vault-item .name, .nav-label span:first-child { display: none; }
+    .brand { justify-content: center; padding: 16px 8px; }
+    .theme-toggle { margin-left: 0; }
+    .nav-label { justify-content: center; }
+    .vault-item { justify-content: center; }
+  }
+
+  /* Blocage mobile (repris de vaultkey-saas-prototype.html) */
+  .mobile-block { display: none; }
+  @media (max-width: 620px) {
+    .app-shell, .overlay { display: none !important; }
+    .mobile-block {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; width: 100vw; text-align: center; padding: 32px;
+    }
+    .mobile-block h2 { font-size: 15px; margin: 0 0 8px; }
+    .mobile-block p { font-size: 12.5px; color: var(--text-2); max-width: 300px; line-height: 1.6; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="app-shell">
+<aside class="sidebar">
+  <div class="brand">
+    <svg width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="var(--text)"/><circle cx="12" cy="10" r="2.3" fill="var(--surface)"/><path d="M11 12.1L13 12.1L14 17L10 17Z" fill="var(--surface)"/></svg>
+    <div>
+      <div class="brand-name">VaultKey</div>
+      <div class="brand-sub">v1.0.0</div>
+    </div>
+    <button class="theme-toggle" id="btnToggleTheme" title="Basculer entre thème clair et sombre"></button>
+  </div>
+  <div class="nav-label">
+    <span>Coffres</span>
+    <span>
+      <button id="btnImportVault" title="Importer un coffre" style="font-size:11px;">⇧</button>
+      <button id="btnNewVault" title="Nouveau coffre">+</button>
+    </span>
+  </div>
+  <input type="file" id="importFileInput" accept="application/json" style="display:none;" />
+  <nav class="vault-nav" id="vaultNav"></nav>
+  <!-- Pied de sidebar réduit à deux actions (à la demande de l'utilisateur) :
+       le détail (URL de l'API, appareils, statut du cache PWA) vit
+       maintenant dans la modale #appSettingsOverlay. -->
+  <div class="sidebar-footer">
+    <button class="vault-item" id="btnAppSettings" title="Paramètres de l'app">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="name">Paramètres de l'app</span>
+    </button>
+    <button class="vault-item" id="btnLogout" title="Déconnexion">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="name">Déconnexion</span>
+    </button>
+  </div>
+</aside>
+
+<main class="main">
+  <div id="noVaultState" class="empty-state">Sélectionne un coffre à gauche, ou crée-en un nouveau avec « + ».</div>
+
+  <div class="update-banner" id="updateBanner">
+    <span>Nouvelle version de VaultKey en cache, prête à être appliquée.</span>
+    <button class="btn primary" id="btnApplyUpdate" style="padding:4px 10px;">Recharger</button>
+  </div>
+
+  <div id="vaultContent" style="display:none;">
+    <div class="topbar">
+      <div class="topbar-info">
+        <span class="breadcrumb" id="breadcrumbName"></span>
+        <span class="topbar-status" id="statusText">coffre non initialisé</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="topbar-utility">
+          <span class="sync-indicator" id="syncSummary"></span>
+          <button class="icon-btn" id="btnSync" title="Synchroniser"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 01-15.5 6.36M3 12a9 9 0 0115.5-6.36"/><path d="M21 3v6h-6M3 21v-6h6"/></svg></button>
+          <button class="icon-btn" id="btnVaultSettings" title="Réglages du coffre" disabled><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+        </div>
+        <button class="btn ghost" id="btnLock" disabled><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke-linecap="round"/></svg>Verrouiller</button>
+        <button class="btn primary" id="btnImportTrigger" disabled><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Importer</button>
+      </div>
+    </div>
+
+    <!-- Statut général (verrouillage, création de coffre) : plus rattaché à
+         l'ancien encart "Verrouillage", devenu inutile depuis le chantier C
+         (la modale de déverrouillage gère tout, y compris son propre repli
+         "Réessayer"). Reste ici, toujours présent, invisible tant que vide
+         (.status-line:empty). -->
+    <div class="status-line" id="lockOutput"></div>
+
+    <!-- Phrase de récupération BIP39 : seul reste réel de l'ancien encart
+         "Verrouillage", visible seulement coffre verrouillé + BIP39 activé
+         pour ce coffre (voir refreshRecoveryPhraseOption). Le bouton
+         "Déverrouiller avec la YubiKey" a été retiré, redondant depuis le
+         chantier C (la sélection du coffre déclenche déjà la modale, qui a
+         elle-même un bouton "Réessayer" en cas d'échec). -->
+    <section id="lockSection" style="display:none;">
+      <h2>Phrase de récupération</h2>
+      <div class="desc">Déverrouille ce coffre à partir des 24 mots notés à sa création, sans YubiKey.</div>
+      <label class="field">Phrase de récupération (24 mots)</label>
+      <textarea id="recoveryPhraseInput" placeholder="mot1 mot2 mot3 …"></textarea>
+      <button class="btn" id="btnUnlockWithPhrase">Déverrouiller avec la phrase de récupération</button>
+    </section>
+
+    <!-- Écran fichiers volontairement à plat (table + dropzone), sans carte
+         ni titre, ISO avec vaultkey-saas-prototype.html sur ce point (les
+         réglages YubiKey/export qui gardaient le style carte ont depuis
+         déménagé dans la modale "Réglages du coffre", voir plus bas). -->
+    <div class="disabled" id="filesSection">
+      <div id="fileListEmpty" class="desc">Aucun fichier.</div>
+      <table class="file-table" id="fileTable" style="display:none;">
+        <colgroup>
+          <col style="width:42%"><col style="width:12%"><col style="width:20%"><col style="width:16%"><col style="width:10%">
+        </colgroup>
+        <thead>
+          <tr><th>Nom</th><th>Taille</th><th>Modifié</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody id="fileTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="disabled" id="uploadSection">
+      <!-- Input natif volontairement invisible (widget du navigateur, hors
+           charte) : reste dans le DOM uniquement pour que le bouton
+           "Importer" de la topbar le déclenche via fileInput.click(), un
+           vrai bouton HTML qui porte lui-même l'accessibilité clavier. -->
+      <input type="file" id="fileInput" style="display:none;" />
+      <div class="dropzone" id="dropzone">Glisser des fichiers ici, ou cliquer sur Importer</div>
+      <div class="status-line" id="uploadOutput"></div>
+    </div>
+
+  </div>
+</main>
+</div>
+
+<!-- Écran de blocage mobile (PRD §2/§3/§8.H) : le déverrouillage YubiKey
+     physique ne fonctionne pas dans un navigateur mobile, limite de
+     plateforme à annoncer clairement plutôt que de laisser l'app casser
+     silencieusement sur un petit écran. -->
+<div class="mobile-block">
+  <h2>Ouvre VaultKey sur un ordinateur</h2>
+  <p>Le déverrouillage par YubiKey physique fonctionne dans un navigateur desktop. Le support mobile n'est pas disponible pour le moment — limite de plateforme, pas de cette app.</p>
+</div>
+
+<!-- Modale de déverrouillage YubiKey (chantier C) : se déclenche directement
+     à la sélection d'un coffre verrouillé, cérémonie réelle affichant les
+     vrais états successifs, pas une simulation. Le déverrouillage par phrase
+     BIP39 reste entièrement à part (formulaire dans #lockSection, jamais
+     ouvert automatiquement) : cette modale ne gère que la YubiKey. -->
+<div class="overlay" id="unlockOverlay">
+  <div class="modal">
+    <div class="unlock-screen">
+      <div class="key-icon" id="unlockKeyIcon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="12" r="4"/><path d="M11.5 12H21M17 12v3M14 12v2" stroke-linecap="round"/></svg></div>
+      <h2 id="unlockModalTitle">Déverrouiller</h2>
+      <p>Branche ta YubiKey et touche-la pour continuer.</p>
+      <div class="unlock-state" id="unlockState"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnCancelUnlock">Annuler</button>
+        <button class="btn primary" id="btnRetryUnlock" style="display:none;">Réessayer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modale de création de coffre -->
+<div class="overlay" id="createVaultOverlay">
+  <div class="modal">
+    <h3>Nouveau coffre</h3>
+
+    <div id="cvStep1">
+      <div class="desc">Choisis un nom, puis une YubiKey pour ce coffre.</div>
+      <label class="field">Nom du coffre</label>
+      <input type="text" id="newVaultName" placeholder="ex. Documents perso" />
+      <div id="cvKnownKeys"></div>
+      <button class="btn primary" id="btnRegisterNewKeyForVault" style="width:100%;">Enregistrer une nouvelle YubiKey</button>
+      <div class="modal-actions">
+        <button class="btn ghost" id="btnCancelCreateVault">Annuler</button>
+      </div>
+    </div>
+
+    <div id="cvStep2" style="display:none;">
+      <div class="desc">Avant de stocker un premier fichier, choisis comment ce coffre pourra être récupéré si cette YubiKey est perdue.</div>
+      <label class="backup-option">
+        <input type="radio" name="backup" value="second-key" checked>
+        <div><div class="label">Enregistrer une deuxième YubiKey maintenant</div><div class="sub">Recommandé. Deux clés indépendantes, aucune n'est un point unique de défaillance.</div></div>
+      </label>
+      <label class="backup-option">
+        <input type="radio" name="backup" value="recovery-phrase">
+        <div><div class="label">Générer une phrase de 24 mots</div><div class="sub">Affichée une seule fois, jamais reconsultable. Choix définitif pour ce coffre : changer d'avis nécessite de créer un nouveau coffre.</div></div>
+      </label>
+      <label class="backup-option">
+        <input type="radio" name="backup" value="no-backup">
+        <div><div class="label">Aucune sauvegarde, je comprends le risque</div><div class="sub">La perte de l'unique YubiKey enregistrée rendra ce coffre définitivement inaccessible.</div></div>
+      </label>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnConfirmBackupChoice">Continuer</button>
+      </div>
+    </div>
+
+    <div id="cvStep3" style="display:none;">
+      <div class="desc">Notez ces 24 mots sur un support physique. Cet écran ne s'affichera plus jamais.</div>
+      <div class="seed-grid" id="seedGrid"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnAckSeed" style="width:100%;">J'ai noté ces mots</button>
+      </div>
+    </div>
+
+    <div class="status-line" id="createVaultOutput"></div>
+  </div>
+</div>
+
+<!-- Connexion au serveur (YubiKey, distincte du déverrouillage d'un coffre) -->
+<div class="overlay open" id="authGate">
+  <div class="modal">
+    <h3>VaultKey</h3>
+    <div id="authGateRegister" style="display:none;">
+      <div class="desc">Premier démarrage de ce serveur : enregistre ta YubiKey pour protéger l'accès au réseau. Un simple contact suffira ensuite, plus besoin de jeton à recopier.</div>
+      <button class="btn primary" id="btnRegisterDevice" style="width:100%;">Enregistrer cette YubiKey</button>
+    </div>
+    <div id="authGateLogin" style="display:none;">
+      <div class="desc">Touche ta YubiKey pour accéder à ce serveur.</div>
+      <button class="btn primary" id="btnLoginDevice" style="width:100%;">Se connecter avec la YubiKey</button>
+    </div>
+    <div class="status-line" id="authGateOutput"></div>
+  </div>
+</div>
+
+<!-- Paramètres de l'app : gestion des appareils autorisés et statut du cache
+     PWA, tout ce qui vivait auparavant en permanence en bas de la sidebar
+     (plus l'ancienne modale séparée "Appareils autorisés", fusionnée ici :
+     un bouton qui n'ouvrait qu'une autre modale par-dessus n'apportait
+     rien), regroupé derrière un seul bouton à la demande de l'utilisateur. -->
+<div class="overlay" id="appSettingsOverlay">
+  <div class="modal wide">
+    <h3>Paramètres de l'app</h3>
+
+    <div class="modal-subheading">Appareils autorisés</div>
+    <div class="desc">YubiKey pouvant se connecter à ce serveur, indépendant des coffres et de leurs propres YubiKey.</div>
+    <div id="deviceList"></div>
+    <button class="btn" id="btnAddDevice" style="width:100%;">Ajouter un appareil</button>
+    <div class="status-line" id="deviceManageOutput"></div>
+
+    <div class="modal-subheading divider">Mise à jour de l'app</div>
+    <div class="app-status">
+      <span class="label" id="appStatusText">app non installée en cache</span>
+      <button id="btnCheckUpdate" title="Vérifier les mises à jour">Vérifier</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCloseAppSettings">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Réglages du coffre sélectionné : YubiKey enregistrées + export, sorties
+     de la vue fichiers (voir road-to-1.0.md, chantier B) pour rejoindre un
+     modale derrière un bouton dédié dans la topbar, plutôt que de rester
+     empilées en cartes sous la table (pas d'équivalent dans la maquette). -->
+<div class="overlay" id="vaultSettingsOverlay">
+  <div class="modal wide">
+    <h3>Réglages du coffre</h3>
+
+    <div class="modal-subheading">YubiKey enregistrées</div>
+    <div class="desc">Une même YubiKey physique peut donner accès à plusieurs coffres : une seule cérémonie d'enregistrement par clé suffit pour tout le drive.</div>
+    <div id="yubikeyList"></div>
+    <button class="btn" id="btnAddYubikey">Ajouter une YubiKey</button>
+    <div id="addYubikeyChoice"></div>
+    <div class="status-line" id="yubikeyOutput"></div>
+
+    <div class="modal-subheading divider">Export</div>
+    <div class="desc">Télécharge le coffre (manifeste + fichiers chiffrés) tel quel, aucune opération cryptographique nécessaire ici : le fichier reste chiffré, seule une YubiKey enregistrée ou la phrase BIP39 pourra le rouvrir.</div>
+    <button class="btn" id="btnExportVault">Exporter ce coffre</button>
+    <div class="status-line" id="exportOutput"></div>
+
+    <div class="modal-subheading divider">Supprimer ce coffre</div>
+    <div class="reset-zone">
+      <p>Supprime définitivement ce coffre : fichiers, enveloppes de clés et métadonnées, côté serveur et en cache local. Aucun export automatique avant suppression, pense à exporter d'abord si besoin. Irréversible, un nouveau contact avec une YubiKey enregistrée est exigé avant d'agir.</p>
+      <button class="btn danger-outline" id="btnDeleteVault" style="width:100%;">Supprimer ce coffre</button>
+    </div>
+    <div class="status-line" id="deleteVaultOutput"></div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCloseVaultSettings">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import init, { WasmVault, generate_salt } from '../wasm/pkg/vaultkey_wasm.js';
+  await init();
+
+  let currentVaultId = null; // string | null
+  let vault = null; // WasmVault | null — toujours l'instance de currentVaultId, voir unlockedVaults
+  const unlockedVaults = {}; // vault_id -> WasmVault, un par coffre déverrouillé cette session (jamais persisté,
+                              // effacé explicitement au verrouillage — plusieurs coffres peuvent rester
+                              // déverrouillés en parallèle, changer de coffre ne verrouille plus les autres)
+  const vaultNames = {}; // vault_id -> name, en mémoire (peuplé depuis vaults-index.json / meta.json)
+  let sessionToken = null; // jeton de session serveur (auth YubiKey réseau, distincte du déverrouillage d'un coffre)
+
+  const $ = (id) => document.getElementById(id);
+
+  // --- Thème clair/sombre : préférence purement locale à l'appareil, sans
+  // rapport avec le chiffrement — localStorage suffit, pas besoin d'OPFS ici.
+  const SUN_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const MOON_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  // Croix de retrait (YubiKey d'un coffre, appareils autorisés) : SVG inline
+  // à la place du caractère "✕" brut, réutilisé aux deux sites d'appel.
+  const X_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  // Actions par ligne de fichier (icônes seules, voir .icon-btn).
+  const DOWNLOAD_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>';
+  const TRASH_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/><path d="M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13"/></svg>';
+  // Statut par coffre dans la sidebar. Corps du cadenas rempli (fill), pas
+  // juste un contour : à 12-13px, un simple trait de 1.8px ne rend pas le
+  // vert assez visible (remonté par l'utilisateur). Fermoir clairement
+  // basculé sur le côté à l'état ouvert (pas juste un petit décrochement) :
+  // tracé repris de l'icône "unlock" de Feather (jeu d'icônes open source,
+  // déjà la référence implicite du reste des pictogrammes de cette session),
+  // pour un rendu net et testé plutôt qu'une géométrie inventée à la main.
+  const VAULT_LOCK_CLOSED = '<svg width="11" height="11" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" fill="currentColor"/><path d="M7 11V7a5 5 0 0110 0v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const VAULT_LOCK_OPEN = '<svg width="11" height="11" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" fill="currentColor"/><path d="M7 11V7a5 5 0 019.9-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+  // Icônes de type de fichier dans la table (repris de vaultkey-saas-prototype.html) :
+  // par extension, générique sinon — pas de détection de type plus fine (pas de
+  // besoin produit identifié au-delà de distinguer une archive d'un document).
+  const FILE_ICON_GENERIC = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h9l7 7v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"/></svg>';
+  const FILE_ICON_ARCHIVE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>';
+  const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+  function fileIcon(name) {
+    const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+    return ARCHIVE_EXTENSIONS.has(ext) ? FILE_ICON_ARCHIVE : FILE_ICON_GENERIC;
+  }
+  function formatSize(bytes) {
+    if (bytes < 1000) return `${bytes} o`;
+    if (bytes < 1_000_000) return `${(bytes / 1000).toFixed(1)} Ko`;
+    return `${(bytes / 1_000_000).toFixed(1)} Mo`;
+  }
+  function formatModified(unixSeconds) {
+    return new Date(unixSeconds * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  function applyTheme(theme) {
+    document.body.dataset.theme = theme;
+    // Icône = destination du clic (comme le texte qu'elle remplace) : soleil
+    // quand on est en sombre (clic -> clair), lune quand on est en clair.
+    const btn = $('btnToggleTheme');
+    btn.innerHTML = theme === 'dark' ? SUN_ICON : MOON_ICON;
+    btn.title = theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre';
+  }
+  applyTheme(localStorage.getItem('vaultkey-theme') === 'light' ? 'light' : 'dark');
+  $('btnToggleTheme').addEventListener('click', () => {
+    const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('vaultkey-theme', next);
+    applyTheme(next);
+  });
+
+  // Toujours la même origine que cette page (frontend et API dans le même
+  // conteneur, voir server/src/main.rs) : le champ "URL de l'API" permettant
+  // de la configurer a été retiré, jugé inutile par l'utilisateur, ce
+  // conteneur unique étant le seul déploiement réellement utilisé.
+  function apiBase() { return location.origin; }
+  function token() { return sessionToken; }
+
+  function toBase64(buf) {
+    // Par chunks : passer un tableau d'octets entier en arguments via spread
+    // (String.fromCharCode(...bytes)) dépasse la limite d'arguments du moteur
+    // JS au-delà de quelques dizaines de Ko — provoquait un RangeError sur
+    // l'export d'un blob/manifeste de taille normale. Pattern standard pour
+    // ce problème connu.
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+  function fromBase64(b64) { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
+  function randomChallenge() { const c = new Uint8Array(32); crypto.getRandomValues(c); return c; }
+
+  // --- base64url (RFC 4648 §5) : format utilisé par webauthn-rs côté
+  // serveur pour toutes les valeurs binaires des cérémonies de connexion au
+  // serveur (auth réseau, section suivante) — distinct de toBase64/fromBase64
+  // ci-dessus (base64 standard), qui restent utilisées telles quelles pour
+  // l'encodage local (export, credentialId des coffres) et ne doivent pas
+  // être touchées.
+  function bufToBase64Url(buf) {
+    return toBase64(buf).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function base64UrlToBuf(b64url) {
+    const pad = '='.repeat((4 - (b64url.length % 4)) % 4);
+    return fromBase64(b64url.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  }
+
+  async function api(method, path, body) {
+    const res = await fetch(`${apiBase()}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token()}` },
+      body,
+    });
+    if (!res.ok) throw new Error(`${method} ${path} → HTTP ${res.status}`);
+    return res;
+  }
+
+  // --- Connexion au serveur par YubiKey (WebAuthn "passkey", sans PRF) ---
+  // Distinct du déverrouillage d'un coffre plus bas (cérémonie PRF séparée) :
+  // ceci ne fait que prouver au serveur qu'un appareil autorisé est présent,
+  // avant de pouvoir atteindre la moindre route /vaults/... (PRD §4/§7.A).
+
+  async function deviceApi(method, path, body) {
+    return fetch(`${apiBase()}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  async function fetchAuthStatus() {
+    try { return await (await fetch(`${apiBase()}/auth/status`)).json(); }
+    catch { return null; } // hors ligne : impossible de savoir, la gate le traite comme "connexion" par défaut
+  }
+
+  // Les valeurs binaires (challenge, ids) arrivent du serveur en base64url ;
+  // navigator.credentials.{create,get} attend des BufferSource, pas des
+  // chaînes. Conversions symétriques à celles du retour (voir plus bas).
+  function creationOptionsFromServer(ccr) {
+    const pk = ccr.publicKey;
+    return {
+      ...pk,
+      challenge: base64UrlToBuf(pk.challenge),
+      user: { ...pk.user, id: base64UrlToBuf(pk.user.id) },
+      excludeCredentials: (pk.excludeCredentials || []).map((c) => ({ ...c, id: base64UrlToBuf(c.id) })),
+    };
+  }
+  function requestOptionsFromServer(rcr) {
+    const pk = rcr.publicKey;
+    return {
+      ...pk,
+      challenge: base64UrlToBuf(pk.challenge),
+      allowCredentials: (pk.allowCredentials || []).map((c) => ({ ...c, id: base64UrlToBuf(c.id) })),
+    };
+  }
+  function attestationToServerJson(cred) {
+    return {
+      id: cred.id,
+      rawId: bufToBase64Url(cred.rawId),
+      type: cred.type,
+      response: {
+        attestationObject: bufToBase64Url(cred.response.attestationObject),
+        clientDataJSON: bufToBase64Url(cred.response.clientDataJSON),
+      },
+      extensions: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+  }
+  function assertionToServerJson(cred) {
+    return {
+      id: cred.id,
+      rawId: bufToBase64Url(cred.rawId),
+      type: cred.type,
+      response: {
+        authenticatorData: bufToBase64Url(cred.response.authenticatorData),
+        clientDataJSON: bufToBase64Url(cred.response.clientDataJSON),
+        signature: bufToBase64Url(cred.response.signature),
+        userHandle: cred.response.userHandle ? bufToBase64Url(cred.response.userHandle) : null,
+      },
+      extensions: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+  }
+
+  async function registerDeviceCeremony(label) {
+    const startRes = await deviceApi('POST', '/auth/register/start');
+    if (!startRes.ok) throw new Error(`register/start → HTTP ${startRes.status}`);
+    const ccr = await startRes.json();
+    const credential = await navigator.credentials.create({ publicKey: creationOptionsFromServer(ccr) });
+    const finishRes = await deviceApi('POST', '/auth/register/finish', {
+      label,
+      credential: attestationToServerJson(credential),
+    });
+    if (!finishRes.ok) throw new Error(`register/finish → HTTP ${finishRes.status}`);
+    ({ sessionToken } = await finishRes.json());
+    await saveConnectionSettings();
+  }
+
+  async function loginDeviceCeremony() {
+    const startRes = await deviceApi('POST', '/auth/login/start');
+    if (!startRes.ok) throw new Error(`login/start → HTTP ${startRes.status}`);
+    const rcr = await startRes.json();
+    const credential = await navigator.credentials.get({ publicKey: requestOptionsFromServer(rcr) });
+    const finishRes = await deviceApi('POST', '/auth/login/finish', assertionToServerJson(credential));
+    if (!finishRes.ok) throw new Error(`login/finish → HTTP ${finishRes.status}`);
+    ({ sessionToken } = await finishRes.json());
+    await saveConnectionSettings();
+  }
+
+  async function refreshDeviceList() {
+    const res = await deviceApi('GET', '/auth/devices');
+    if (!res.ok) return;
+    const devices = await res.json();
+    const el = $('deviceList');
+    el.innerHTML = '';
+    for (const d of devices) {
+      const row = document.createElement('div');
+      row.className = 'yk-row';
+      row.innerHTML =
+        `<span class="id">${d.label} — ${d.credentialId.slice(0, 16)}…</span>` +
+        `<button ${devices.length === 1 ? 'disabled title="dernier appareil, retrait impossible"' : ''}>${X_ICON}</button>`;
+      row.querySelector('button').onclick = async () => {
+        await deviceApi('DELETE', `/auth/devices/${encodeURIComponent(d.credentialId)}`);
+        await refreshDeviceList();
+      };
+      el.appendChild(row);
+    }
+  }
+
+  // La gestion des appareils vit directement dans cette modale (fusionnée
+  // depuis l'ancienne modale séparée "Appareils autorisés", voir plus haut) :
+  // rafraîchie à chaque ouverture, comme le faisait auparavant le bouton
+  // "Appareils" qui l'ouvrait par-dessus.
+  $('btnAppSettings').addEventListener('click', async () => {
+    $('deviceManageOutput').textContent = '';
+    $('appSettingsOverlay').classList.add('open');
+    await refreshDeviceList();
+  });
+  $('btnCloseAppSettings').addEventListener('click', () => $('appSettingsOverlay').classList.remove('open'));
+
+  $('btnLogout').addEventListener('click', async () => {
+    // Une session serveur qui se termine verrouille aussi tout ce qui était
+    // déverrouillé (défense en profondeur, même logique que le verrouillage
+    // explicite d'un coffre : effacer la clé maîtresse en mémoire).
+    for (const v of Object.values(unlockedVaults)) v.lock();
+    for (const id of Object.keys(unlockedVaults)) delete unlockedVaults[id];
+    vault = null;
+    currentVaultId = null;
+    sessionToken = null;
+    await saveConnectionSettings();
+    document.querySelectorAll('.overlay').forEach((el) => el.classList.remove('open'));
+    $('noVaultState').style.display = '';
+    $('vaultContent').style.display = 'none';
+    await showAuthGate();
+  });
+
+  $('btnVaultSettings').addEventListener('click', async () => {
+    $('vaultSettingsOverlay').classList.add('open');
+    await refreshYubikeyList();
+  });
+  $('btnCloseVaultSettings').addEventListener('click', () => $('vaultSettingsOverlay').classList.remove('open'));
+  $('btnAddDevice').addEventListener('click', async () => {
+    const out = $('deviceManageOutput');
+    try {
+      const label = prompt('Nom pour cette YubiKey (facultatif)', 'YubiKey') || 'YubiKey';
+      out.textContent = 'enregistrement WebAuthn (PIN + touch)…';
+      await registerDeviceCeremony(label);
+      await refreshDeviceList();
+      out.innerHTML = '<span class="ok">✔ appareil ajouté</span>';
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  async function enterApp() {
+    document.body.classList.add('authed');
+    $('authGate').classList.remove('open');
+    await discoverVaults();
+  }
+
+  async function showAuthGate() {
+    document.body.classList.remove('authed');
+    $('authGate').classList.add('open');
+    const status = await fetchAuthStatus();
+    // Hors ligne (status === null) : par défaut on propose la connexion,
+    // pas l'enregistrement — un premier démarrage hors ligne est un cas
+    // limite qu'on ne traite pas, mais proposer par erreur un nouvel
+    // enregistrement à quelqu'un déjà équipé serait pire.
+    const hasDevices = status?.hasDevices ?? true;
+    $('authGateRegister').style.display = hasDevices ? 'none' : '';
+    $('authGateLogin').style.display = hasDevices ? '' : 'none';
+  }
+
+  $('btnRegisterDevice').addEventListener('click', async () => {
+    const out = $('authGateOutput');
+    try {
+      out.textContent = 'enregistrement WebAuthn (PIN + touch)…';
+      await registerDeviceCeremony('YubiKey');
+      await enterApp();
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+  $('btnLoginDevice').addEventListener('click', async () => {
+    const out = $('authGateOutput');
+    try {
+      out.textContent = 'connexion WebAuthn (touch)…';
+      await loginDeviceCeremony();
+      await enterApp();
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  // --- Cache OPFS (PRD §4, §6.2, §7.F), scopé au coffre courant ---
+
+  async function getVaultDir(vaultId = currentVaultId) {
+    const root = await navigator.storage.getDirectory();
+    const vaults = await root.getDirectoryHandle('vaults', { create: true });
+    return vaults.getDirectoryHandle(vaultId, { create: true });
+  }
+  async function getBlobsDir() { return (await getVaultDir()).getDirectoryHandle('blobs', { create: true }); }
+
+  // Supprime tout le sous-répertoire OPFS d'un coffre (manifeste, enveloppes,
+  // sync-state, blobs) en un seul appel récursif, plutôt que fichier par
+  // fichier comme le nettoyage best-effort de RESET (RESET garde le dossier,
+  // seul son contenu change ; ici le dossier lui-même disparaît).
+  async function deleteVaultCache(vaultId) {
+    const root = await navigator.storage.getDirectory();
+    const vaults = await root.getDirectoryHandle('vaults', { create: true });
+    await vaults.removeEntry(vaultId, { recursive: true }).catch(() => {});
+  }
+
+  async function cacheWriteFile(dirHandle, name, bytes) {
+    const fh = await dirHandle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(bytes);
+    await w.close();
+  }
+  async function cacheReadFile(dirHandle, name) {
+    const fh = await dirHandle.getFileHandle(name);
+    const file = await fh.getFile();
+    return new Uint8Array(await file.arrayBuffer());
+  }
+
+  // Registre racine OPFS (pas par coffre) : vaults-index.json (id → nom) et
+  // known-credentials.json (credentials déjà enregistrés, réutilisables sur
+  // d'autres coffres sans nouvelle cérémonie WebAuthn, PRD §5.3).
+  async function getRootDir() { return navigator.storage.getDirectory(); }
+
+  async function loadVaultsIndex() {
+    try { return JSON.parse(new TextDecoder().decode(await cacheReadFile(await getRootDir(), 'vaults-index.json'))); }
+    catch { return {}; }
+  }
+  async function saveVaultsIndex(idx) {
+    await cacheWriteFile(await getRootDir(), 'vaults-index.json', new TextEncoder().encode(JSON.stringify(idx)));
+  }
+
+  async function loadKnownCredentials() {
+    try { return JSON.parse(new TextDecoder().decode(await cacheReadFile(await getRootDir(), 'known-credentials.json'))); }
+    catch { return []; }
+  }
+  async function saveKnownCredentials(list) {
+    await cacheWriteFile(await getRootDir(), 'known-credentials.json', new TextEncoder().encode(JSON.stringify(list)));
+  }
+
+  // Jeton de session (obtenu par la cérémonie YubiKey de connexion au
+  // serveur, voir plus bas) : persisté localement pour ne pas avoir à
+  // retoucher la YubiKey à chaque rechargement de page. Ce jeton protège
+  // seulement l'accès réseau (PRD §7.A), pas le contenu du coffre (protégé
+  // par la clé maîtresse, jamais stockée) : le garder en local ne relâche
+  // rien du modèle zero-knowledge. Le fichier contenait aussi l'URL de
+  // l'API avant le retrait de ce champ (jugé inutile) : une ancienne copie
+  // avec cette clé en trop est simplement ignorée, pas besoin de migration.
+  async function loadConnectionSettings() {
+    try { return JSON.parse(new TextDecoder().decode(await cacheReadFile(await getRootDir(), 'connection.json'))); }
+    catch { return null; }
+  }
+  async function saveConnectionSettings() {
+    const json = JSON.stringify({ sessionToken });
+    await cacheWriteFile(await getRootDir(), 'connection.json', new TextEncoder().encode(json));
+  }
+  async function rememberCredential(credentialIdB64, label) {
+    const list = await loadKnownCredentials();
+    if (!list.some((c) => c.credentialId === credentialIdB64)) {
+      list.push({ credentialId: credentialIdB64, label });
+      await saveKnownCredentials(list);
+    }
+  }
+
+  async function loadSyncState() {
+    try { return JSON.parse(new TextDecoder().decode(await cacheReadFile(await getVaultDir(), 'sync-state.json'))); }
+    catch { return { manifestPending: false, envelopesPending: false, pendingBlobIds: [] }; }
+  }
+  async function saveSyncState(state) {
+    await cacheWriteFile(await getVaultDir(), 'sync-state.json', new TextEncoder().encode(JSON.stringify(state)));
+  }
+  async function refreshSyncBadge() {
+    const state = await loadSyncState();
+    const count = state.pendingBlobIds.length + (state.manifestPending ? 1 : 0) + (state.envelopesPending ? 1 : 0);
+    $('syncSummary').textContent = count === 0 ? 'tout synchronisé' : `${count} élément(s) en attente`;
+    return state;
+  }
+
+  async function writeEnvelopesCacheThenNetwork(json) {
+    await cacheWriteFile(await getVaultDir(), 'envelopes.json', new TextEncoder().encode(json));
+    const state = await loadSyncState();
+    try { await api('PUT', `/vaults/${currentVaultId}/envelopes`, json); state.envelopesPending = false; }
+    catch { state.envelopesPending = true; }
+    await saveSyncState(state);
+  }
+  async function writeManifestCacheThenNetwork(bytes) {
+    await cacheWriteFile(await getVaultDir(), 'manifest.enc', bytes);
+    const state = await loadSyncState();
+    try { await api('PUT', `/vaults/${currentVaultId}/manifest`, bytes); state.manifestPending = false; }
+    catch { state.manifestPending = true; }
+    await saveSyncState(state);
+  }
+  async function writeMetaCacheThenNetwork(name) {
+    const json = JSON.stringify({ name });
+    await cacheWriteFile(await getVaultDir(), 'meta.json', new TextEncoder().encode(json));
+    try { await api('PUT', `/vaults/${currentVaultId}/meta`, json); } catch { /* pas grave, meta n'est pas critique */ }
+  }
+  async function writeBlobCacheThenNetwork(blobId, bytes) {
+    await cacheWriteFile(await getBlobsDir(), `${blobId}.enc`, bytes);
+    const state = await loadSyncState();
+    try { await api('PUT', `/vaults/${currentVaultId}/blobs/${blobId}`, bytes); }
+    catch { if (!state.pendingBlobIds.includes(blobId)) state.pendingBlobIds.push(blobId); }
+    await saveSyncState(state);
+  }
+
+  async function fetchWithCacheFallback(path, cacheFileName) {
+    try {
+      const res = await api('GET', path);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      await cacheWriteFile(await getVaultDir(), cacheFileName, bytes);
+      return bytes;
+    } catch (networkError) {
+      const cached = await cacheReadFile(await getVaultDir(), cacheFileName).catch(() => null);
+      if (cached) return cached;
+      throw networkError;
+    }
+  }
+  async function readBlobCacheFirst(blobId) {
+    const blobsDir = await getBlobsDir();
+    const cached = await cacheReadFile(blobsDir, `${blobId}.enc`).catch(() => null);
+    if (cached) return cached;
+    const res = await api('GET', `/vaults/${currentVaultId}/blobs/${blobId}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await cacheWriteFile(blobsDir, `${blobId}.enc`, bytes);
+    return bytes;
+  }
+
+  async function syncPending() {
+    const state = await loadSyncState();
+    const blobsDir = await getBlobsDir();
+    const vaultDir = await getVaultDir();
+
+    const stillPending = [];
+    for (const blobId of state.pendingBlobIds) {
+      try { await api('PUT', `/vaults/${currentVaultId}/blobs/${blobId}`, await cacheReadFile(blobsDir, `${blobId}.enc`)); }
+      catch { stillPending.push(blobId); }
+    }
+    state.pendingBlobIds = stillPending;
+
+    if (state.manifestPending) {
+      try { await api('PUT', `/vaults/${currentVaultId}/manifest`, await cacheReadFile(vaultDir, 'manifest.enc')); state.manifestPending = false; }
+      catch { /* retenté plus tard */ }
+    }
+    if (state.envelopesPending) {
+      try { await api('PUT', `/vaults/${currentVaultId}/envelopes`, await cacheReadFile(vaultDir, 'envelopes.json')); state.envelopesPending = false; }
+      catch { /* retenté plus tard */ }
+    }
+    await saveSyncState(state);
+    await refreshSyncBadge();
+    return state;
+  }
+
+  $('btnSync').addEventListener('click', async () => {
+    $('syncSummary').textContent = 'synchronisation…';
+    const state = await syncPending();
+    const remaining = state.pendingBlobIds.length + (state.manifestPending ? 1 : 0) + (state.envelopesPending ? 1 : 0);
+    if (vault && vault.isUnlocked()) await refreshFileList();
+    $('syncSummary').textContent = remaining === 0 ? 'tout synchronisé' : `${remaining} élément(s) toujours en attente (hors ligne ?)`;
+  });
+
+  // --- Sélection d'une YubiKey (réutiliser une clé connue, ou en enregistrer
+  // une nouvelle) : partagé par la création de coffre et l'ajout de clé.
+  // `onChosen({credentialIdB64, secret})` est appelé une fois la dérivation faite.
+  async function renderYubikeyChooser(container, salt, onChosen, statusEl) {
+    const known = await loadKnownCredentials();
+    container.innerHTML = '';
+    for (const cred of known) {
+      const btn = document.createElement('button');
+      btn.className = 'known-key-btn';
+      btn.textContent = `Réutiliser « ${cred.label} »`;
+      btn.onclick = async () => {
+        try {
+          statusEl.textContent = 'dérivation du secret PRF (touch)…';
+          const credentialId = fromBase64(cred.credentialId);
+          const assertion = await navigator.credentials.get({
+            publicKey: {
+              challenge: randomChallenge(),
+              allowCredentials: [{ id: credentialId, type: 'public-key' }],
+              extensions: { prf: { eval: { first: salt } } },
+              timeout: 60000,
+            },
+          });
+          const secret = new Uint8Array(assertion.getClientExtensionResults().prf.results.first);
+          onChosen({ credentialIdB64: cred.credentialId, secret });
+        } catch (e) {
+          statusEl.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+        }
+      };
+      container.appendChild(btn);
+    }
+  }
+
+  async function registerNewYubikey(salt, label, statusEl) {
+    statusEl.textContent = 'enregistrement WebAuthn (PIN + touch)…';
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        rp: { name: 'VaultKey' },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'vaultkey', displayName: 'VaultKey' },
+        challenge: randomChallenge(),
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: 'cross-platform' },
+        extensions: { prf: {} },
+        timeout: 60000,
+      },
+    });
+    const credentialId = new Uint8Array(cred.rawId);
+    const credentialIdB64 = toBase64(credentialId);
+
+    statusEl.textContent = 'dérivation du secret PRF (nouveau touch)…';
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: randomChallenge(),
+        allowCredentials: [{ id: credentialId, type: 'public-key' }],
+        extensions: { prf: { eval: { first: salt } } },
+        timeout: 60000,
+      },
+    });
+    const secret = new Uint8Array(assertion.getClientExtensionResults().prf.results.first);
+    await rememberCredential(credentialIdB64, label);
+    return { credentialIdB64, secret };
+  }
+
+  // --- Sidebar : découverte et rendu de la liste des coffres ---
+
+  async function discoverVaults() {
+    const idx = await loadVaultsIndex();
+    let ids;
+    try {
+      ids = await (await api('GET', '/vaults')).json();
+    } catch {
+      ids = Object.keys(idx); // hors ligne : repli entier sur l'index local déjà connu
+    }
+
+    for (const id of ids) {
+      if (idx[id]) continue;
+      try {
+        const meta = await (await api('GET', `/vaults/${id}/meta`)).json();
+        idx[id] = meta.name;
+      } catch {
+        idx[id] = id; // pas de meta (hors ligne, ou jamais nommé) : affiche l'id brut
+      }
+    }
+    await saveVaultsIndex(idx);
+    Object.assign(vaultNames, idx);
+    renderVaultNav(ids.length ? ids : Object.keys(idx));
+  }
+
+  function renderVaultNav(ids) {
+    const nav = $('vaultNav');
+    nav.innerHTML = '';
+    for (const id of ids) {
+      // Plusieurs coffres peuvent être déverrouillés en parallèle (voir
+      // unlockedVaults) : chacun reflète son propre état, indépendamment du
+      // coffre actuellement sélectionné.
+      const unlocked = !!unlockedVaults[id] && unlockedVaults[id].isUnlocked();
+      const item = document.createElement('div');
+      item.className = `vault-item${id === currentVaultId ? ' active' : ''}`;
+      item.title = vaultNames[id] ?? id;
+      item.innerHTML =
+        `<span class="vault-lock-icon ${unlocked ? 'unlocked' : 'locked'}">${unlocked ? VAULT_LOCK_OPEN : VAULT_LOCK_CLOSED}</span>` +
+        `<span class="name">${vaultNames[id] ?? id}</span>`;
+      item.onclick = () => selectVault(id);
+      nav.appendChild(item);
+    }
+  }
+
+  async function selectVault(vaultId) {
+    currentVaultId = vaultId;
+    // Réutilise l'instance déjà déverrouillée pour ce coffre si elle existe
+    // (voir unlockedVaults) : changer de coffre ne verrouille plus les
+    // autres, contrairement au comportement d'origine (étape 5).
+    vault = unlockedVaults[vaultId] ?? null;
+    $('noVaultState').style.display = 'none';
+    $('vaultContent').style.display = '';
+    $('breadcrumbName').textContent = vaultNames[vaultId] ?? vaultId;
+    renderVaultNav(Object.keys(vaultNames));
+    $('lockOutput').textContent = '';
+    $('recoveryPhraseInput').value = '';
+
+    if (vault && vault.isUnlocked()) {
+      setLockedUI(false, `« ${vaultNames[vaultId] ?? vaultId} » déverrouillé`);
+      await refreshFileList();
+      await refreshYubikeyList();
+    } else {
+      setLockedUI(true, `« ${vaultNames[vaultId] ?? vaultId} » verrouillé`);
+      $('fileListEmpty').style.display = '';
+      $('fileTable').style.display = 'none';
+      $('yubikeyList').textContent = '';
+      // Sélectionner un coffre verrouillé lance directement la cérémonie
+      // YubiKey (chantier C), sans bouton intermédiaire (l'ancien bouton
+      // "Déverrouiller avec la YubiKey" a été retiré, la modale elle-même
+      // gère le repli en cas d'échec via son bouton "Réessayer"). La phrase
+      // BIP39 n'est jamais déclenchée ici : elle reste un choix explicite,
+      // propre à son propre bouton dans #lockSection (visible seulement si
+      // ce coffre a une phrase activée, voir refreshRecoveryPhraseOption).
+      openUnlockModal(vaultId);
+    }
+    await refreshSyncBadge();
+    await refreshRecoveryPhraseOption();
+  }
+
+  function setLockedUI(locked, text) {
+    $('statusText').textContent = text;
+    $('uploadSection').classList.toggle('disabled', locked);
+    $('filesSection').classList.toggle('disabled', locked);
+    $('btnLock').disabled = locked;
+    $('btnImportTrigger').disabled = locked;
+    $('btnVaultSettings').disabled = locked;
+    // Le contenu de la modale Réglages exige un vault déverrouillé
+    // (vault.envelopesJson, vault.listFilesJson…) : la fermer si elle était
+    // ouverte au moment où le coffre se verrouille, plutôt que de la laisser
+    // affichée avec un bouton "Ajouter une YubiKey" qui planterait au clic.
+    if (locked) $('vaultSettingsOverlay').classList.remove('open');
+  }
+
+  // Affiche l'encart "Phrase de récupération" seulement si ce coffre est
+  // verrouillé ET a une phrase BIP39 activée : une fois déverrouillé, ce
+  // formulaire ne sert plus à rien (même raison que la suppression du
+  // bouton "Déverrouiller avec la YubiKey", voir #lockSection). Nécessite
+  // une lecture d'enveloppes (réseau ou cache), donc appelée après chaque
+  // changement d'état verrouillé/déverrouillé, pas juste à la sélection.
+  async function refreshRecoveryPhraseOption() {
+    if (vault && vault.isUnlocked()) { $('lockSection').style.display = 'none'; return; }
+    try {
+      const bytes = await fetchWithCacheFallback(`/vaults/${currentVaultId}/envelopes`, 'envelopes.json');
+      const envelopes = JSON.parse(new TextDecoder().decode(bytes));
+      $('lockSection').style.display = envelopes.recoveryPhrase?.enabled ? '' : 'none';
+    } catch {
+      $('lockSection').style.display = 'none';
+    }
+  }
+
+  // --- Fichiers ---
+
+  async function refreshFileList() {
+    const files = JSON.parse(vault.listFilesJson());
+    const state = await loadSyncState();
+    const empty = $('fileListEmpty');
+    const table = $('fileTable');
+    if (files.length === 0) {
+      empty.style.display = '';
+      table.style.display = 'none';
+      await refreshSyncBadge();
+      return;
+    }
+    empty.style.display = 'none';
+    table.style.display = '';
+    const body = $('fileTableBody');
+    body.innerHTML = '';
+    for (const f of files) {
+      const pending = state.pendingBlobIds.includes(f.blobId);
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td><span class="file-name">${fileIcon(f.realName)}<span>${f.realName}</span></span></td>` +
+        `<td class="mono">${formatSize(f.size)}</td>` +
+        `<td class="mono">${formatModified(f.modified)}</td>` +
+        `<td><span class="sync-badge ${pending ? 'sync-pending' : 'sync-synced'}"><span class="dot"></span>${pending ? 'En attente' : 'Synchronisé'}</span></td>` +
+        `<td class="actions"><span class="actions-group"></span></td>`;
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'icon-btn';
+      dlBtn.title = 'Télécharger';
+      dlBtn.innerHTML = DOWNLOAD_ICON;
+      dlBtn.onclick = () => downloadFile(f);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn danger';
+      delBtn.title = 'Supprimer';
+      delBtn.innerHTML = TRASH_ICON;
+      delBtn.onclick = () => deleteFile(f);
+      tr.querySelector('.actions-group').append(dlBtn, delBtn);
+      body.appendChild(tr);
+    }
+    await refreshSyncBadge();
+  }
+
+  async function downloadFile(entry) {
+    const ciphertext = await readBlobCacheFirst(entry.blobId);
+    const plaintext = vault.readFile(entry.realName, ciphertext);
+    const blob = new Blob([plaintext]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = entry.realName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Retire un fichier du manifeste (vault.removeFile, core/src/vault.rs).
+  // Le blob chiffré correspondant reste orphelin côté serveur : même
+  // compromis déjà assumé pour RESET (pas d'endpoint de suppression de blob,
+  // volontairement hors scope) — seul le cache local est nettoyé ici.
+  async function deleteFile(entry) {
+    if (!confirm(`Supprimer « ${entry.realName} » de ce coffre ?`)) return;
+    const out = $('uploadOutput');
+    try {
+      vault.removeFile(entry.realName);
+      await writeManifestCacheThenNetwork(vault.exportEncryptedManifest());
+
+      const blobsDir = await getBlobsDir();
+      await blobsDir.removeEntry(`${entry.blobId}.enc`).catch(() => {});
+      const state = await loadSyncState();
+      state.pendingBlobIds = state.pendingBlobIds.filter((id) => id !== entry.blobId);
+      await saveSyncState(state);
+
+      await refreshFileList();
+      out.innerHTML = `<span class="ok">✔ ${entry.realName} supprimé</span>`;
+    } catch (err) {
+      out.innerHTML = `<span class="fail">✘ ${err.message ?? err}</span>`;
+    }
+  }
+
+  // Chemin d'upload partagé par l'input fichier, le glisser-déposer et le
+  // bouton "Importer" de la topbar (qui ne fait que déclencher l'input) —
+  // un seul endroit qui parle à vault.addFile.
+  async function uploadFile(file) {
+    const out = $('uploadOutput');
+    try {
+      out.textContent = `chiffrement de ${file.name}…`;
+      const result = vault.addFile(file.name, new Uint8Array(await file.arrayBuffer()));
+
+      out.textContent = 'écriture en cache local puis envoi du blob chiffré…';
+      await writeBlobCacheThenNetwork(result.blob_id, result.ciphertext);
+      await writeManifestCacheThenNetwork(vault.exportEncryptedManifest());
+
+      await refreshFileList();
+      const state = await loadSyncState();
+      out.innerHTML = state.pendingBlobIds.includes(result.blob_id)
+        ? `<span class="ok">✔ ${file.name} chiffré et mis en cache localement — <span class="fail">réseau inaccessible, en attente de synchronisation</span></span>`
+        : `<span class="ok">✔ ${file.name} chiffré et envoyé (blob ${result.blob_id})</span>`;
+    } catch (err) {
+      out.innerHTML = `<span class="fail">✘ ${err.message ?? err}</span>`;
+    }
+  }
+
+  $('fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await uploadFile(file);
+    e.target.value = '';
+  });
+
+  $('btnImportTrigger').addEventListener('click', () => $('fileInput').click());
+
+  const dropzone = $('dropzone');
+  ['dragenter', 'dragover'].forEach((evt) => dropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  }));
+  ['dragleave', 'drop'].forEach((evt) => dropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+  }));
+  dropzone.addEventListener('drop', async (e) => {
+    const file = e.dataTransfer.files[0];
+    if (file) await uploadFile(file);
+  });
+
+  // --- YubiKey de ce coffre ---
+
+  async function refreshYubikeyList() {
+    const envelopes = JSON.parse(vault.envelopesJson());
+    const known = await loadKnownCredentials();
+    const el = $('yubikeyList');
+    el.innerHTML = '';
+    // Bloquer le retrait seulement si ça laisserait zéro méthode de
+    // déverrouillage : 1 YubiKey ET pas de phrase BIP39 (corrigé à l'étape 8,
+    // la garde de l'étape 7 ignorait la BIP39 puisqu'elle n'existait pas encore).
+    const blockRemoval = envelopes.yubikeys.length === 1 && !envelopes.recoveryPhrase.enabled;
+    for (const yk of envelopes.yubikeys) {
+      const label = known.find((c) => c.credentialId === yk.credentialId)?.label;
+      const row = document.createElement('div');
+      row.className = 'yk-row';
+      row.innerHTML =
+        `<span class="id">${label ? `${label} — ` : ''}${yk.credentialId.slice(0, 16)}…</span>` +
+        `<button ${blockRemoval ? 'disabled title="dernière méthode de déverrouillage, retrait impossible"' : ''}>${X_ICON}</button>`;
+      row.querySelector('button').onclick = async () => {
+        vault.removeYubikey(yk.credentialId);
+        await writeEnvelopesCacheThenNetwork(vault.envelopesJson());
+        await refreshYubikeyList();
+        $('yubikeyOutput').innerHTML = '<span class="ok">✔ YubiKey retirée de ce coffre</span>';
+      };
+      el.appendChild(row);
+    }
+  }
+
+  // Suppression définitive d'un coffre. Contact YubiKey exigé avant d'agir,
+  // mais sans avoir besoin du secret PRF dérivé (aucune opération
+  // cryptographique ici, juste une preuve de présence physique) : n'importe
+  // laquelle des YubiKey déjà enregistrées sur ce coffre peut servir, pas
+  // une clé précise. Un coffre protégé uniquement par une phrase BIP39
+  // (zéro YubiKey enregistrée, cas valide depuis l'étape 8) n'a rien à
+  // toucher : la confirmation explicite suffit alors seule.
+  $('btnDeleteVault').addEventListener('click', async () => {
+    const out = $('deleteVaultOutput');
+    const vaultId = currentVaultId;
+    const name = vaultNames[vaultId] ?? vaultId;
+    if (!confirm(`Supprimer définitivement « ${name} » ? Fichiers, clés et métadonnées seront perdus, sans possibilité de retour en arrière. Continuer ?`)) return;
+    try {
+      const envelopes = JSON.parse(vault.envelopesJson());
+      if (envelopes.yubikeys.length > 0) {
+        out.textContent = 'confirmation par contact YubiKey requise…';
+        await navigator.credentials.get({
+          publicKey: {
+            challenge: randomChallenge(),
+            allowCredentials: envelopes.yubikeys.map((yk) => ({ id: fromBase64(yk.credentialId), type: 'public-key' })),
+            timeout: 60000,
+          },
+        });
+      }
+
+      out.textContent = 'suppression en cours…';
+      await api('DELETE', `/vaults/${vaultId}`);
+      await deleteVaultCache(vaultId);
+      delete unlockedVaults[vaultId];
+      delete vaultNames[vaultId];
+      const idx = await loadVaultsIndex();
+      delete idx[vaultId];
+      await saveVaultsIndex(idx);
+
+      $('vaultSettingsOverlay').classList.remove('open');
+      vault = null;
+      currentVaultId = null;
+      $('noVaultState').style.display = '';
+      $('vaultContent').style.display = 'none';
+      renderVaultNav(Object.keys(vaultNames));
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  // --- Export / import ---
+
+  $('btnExportVault').addEventListener('click', async () => {
+    const out = $('exportOutput');
+    try {
+      out.textContent = 'préparation du bundle…';
+      const files = JSON.parse(vault.listFilesJson());
+      const blobs = {};
+      for (const f of files) {
+        blobs[f.blobId] = toBase64(await readBlobCacheFirst(f.blobId));
+      }
+      const bundle = {
+        vaultId: currentVaultId,
+        meta: { name: vaultNames[currentVaultId] ?? currentVaultId },
+        envelopes: JSON.parse(vault.envelopesJson()),
+        manifest: toBase64(await cacheReadFile(await getVaultDir(), 'manifest.enc')),
+        blobs,
+      };
+      const blob = new Blob([JSON.stringify(bundle)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${vaultNames[currentVaultId] ?? currentVaultId}.vaultkey.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      out.innerHTML = `<span class="ok">✔ export téléchargé (${files.length} fichier(s))</span>`;
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  $('btnImportVault').addEventListener('click', () => $('importFileInput').click());
+
+  $('importFileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const bundle = JSON.parse(await file.text());
+      // Toujours un nouvel id : n'écrase jamais silencieusement un coffre
+      // existant qui porterait par coincidence le même id sur cette instance.
+      const newId = crypto.randomUUID();
+      currentVaultId = newId; // les writeXCacheThenNetwork ci-dessous lisent currentVaultId
+
+      const envelopesJson = JSON.stringify(bundle.envelopes);
+      await writeMetaCacheThenNetwork(bundle.meta?.name ?? 'Coffre importé');
+      await writeEnvelopesCacheThenNetwork(envelopesJson);
+      await writeManifestCacheThenNetwork(fromBase64(bundle.manifest));
+      for (const [blobId, b64] of Object.entries(bundle.blobs)) {
+        await writeBlobCacheThenNetwork(blobId, fromBase64(b64));
+      }
+
+      const idx = await loadVaultsIndex();
+      idx[newId] = bundle.meta?.name ?? 'Coffre importé';
+      await saveVaultsIndex(idx);
+      vaultNames[newId] = idx[newId];
+
+      await selectVault(newId);
+    } catch (err) {
+      alert(`Échec de l'import : ${err.message ?? err}`);
+    }
+  });
+
+  $('btnAddYubikey').addEventListener('click', async () => {
+    const container = $('addYubikeyChoice');
+    const out = $('yubikeyOutput');
+    const salt = generate_salt();
+
+    const finish = async ({ credentialIdB64, secret }) => {
+      vault.addYubikey(credentialIdB64, salt, secret);
+      await writeEnvelopesCacheThenNetwork(vault.envelopesJson());
+      container.innerHTML = '';
+      await refreshYubikeyList();
+      out.innerHTML = '<span class="ok">✔ YubiKey ajoutée à ce coffre</span>';
+    };
+
+    await renderYubikeyChooser(container, salt, finish, out);
+    const newBtn = document.createElement('button');
+    newBtn.className = 'known-key-btn';
+    newBtn.textContent = 'Enregistrer une nouvelle YubiKey';
+    newBtn.onclick = async () => {
+      try {
+        const label = prompt('Nom pour cette YubiKey (facultatif)', 'YubiKey') || 'YubiKey';
+        finish(await registerNewYubikey(salt, label, out));
+      } catch (e) {
+        out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+      }
+    };
+    container.appendChild(newBtn);
+  });
+
+  // --- Verrouillage / déverrouillage ---
+
+  $('btnLock').addEventListener('click', async () => {
+    if (vault) vault.lock();
+    vault = null;
+    delete unlockedVaults[currentVaultId]; // verrouillage explicite : efface bien cette instance, pas juste la référence locale
+    setLockedUI(true, `« ${vaultNames[currentVaultId] ?? currentVaultId} » verrouillé`);
+    renderVaultNav(Object.keys(vaultNames));
+    $('lockOutput').innerHTML = '<span class="ok">✔ état en mémoire effacé (clé maîtresse, manifeste)</span>';
+    await refreshRecoveryPhraseOption();
+  });
+
+  // --- Modale de déverrouillage YubiKey (chantier C) ---
+  // Cérémonie réelle (pas simulée comme dans la maquette). Seul déclencheur
+  // désormais : la sélection d'un coffre verrouillé (voir selectVault) ; le
+  // bouton manuel "Déverrouiller avec la YubiKey" qui vivait dans
+  // #lockSection a été retiré (devenu redondant), la modale gère elle-même
+  // son repli en cas d'échec via son bouton "Réessayer".
+
+  let unlockAbortController = null;
+
+  function openUnlockModal(vaultId) {
+    $('unlockModalTitle').textContent = `Déverrouiller « ${vaultNames[vaultId] ?? vaultId} »`;
+    $('unlockState').textContent = '';
+    $('unlockKeyIcon').classList.remove('waiting');
+    $('btnRetryUnlock').style.display = 'none';
+    $('unlockOverlay').classList.add('open');
+    startUnlockCeremony(vaultId);
+  }
+
+  async function startUnlockCeremony(vaultId) {
+    const stateEl = $('unlockState');
+    const keyIcon = $('unlockKeyIcon');
+    $('btnRetryUnlock').style.display = 'none';
+    stateEl.innerHTML = '';
+    unlockAbortController = new AbortController();
+    try {
+      stateEl.textContent = 'lecture des enveloppes (réseau, repli cache local si hors ligne)…';
+      const envelopesBytes = await fetchWithCacheFallback(`/vaults/${vaultId}/envelopes`, 'envelopes.json');
+      const envelopesJson = new TextDecoder().decode(envelopesBytes);
+      const envelopes = JSON.parse(envelopesJson);
+      const entry = envelopes.yubikeys[0];
+      if (!entry) throw new Error('aucune YubiKey enregistrée pour ce coffre');
+
+      const credentialId = fromBase64(entry.credentialId);
+      const salt = fromBase64(entry.salt);
+
+      // La pulsation de l'icône (voir .key-icon.waiting) ne couvre que cette
+      // fenêtre précise : l'attente d'un geste physique de l'utilisateur, pas
+      // les étapes réseau qui l'entourent.
+      stateEl.textContent = 'en attente du contact YubiKey…';
+      keyIcon.classList.add('waiting');
+      const assertion = await navigator.credentials.get({
+        signal: unlockAbortController.signal,
+        publicKey: {
+          challenge: randomChallenge(),
+          allowCredentials: [{ id: credentialId, type: 'public-key' }],
+          extensions: { prf: { eval: { first: salt } } },
+          timeout: 60000,
+        },
+      });
+      keyIcon.classList.remove('waiting');
+      const secret = new Uint8Array(assertion.getClientExtensionResults().prf.results.first);
+
+      stateEl.textContent = 'lecture du manifeste (réseau, repli cache local si hors ligne) et déverrouillage…';
+      const encryptedManifest = await fetchWithCacheFallback(`/vaults/${vaultId}/manifest`, 'manifest.enc');
+
+      const opened = WasmVault.fromEnvelopesJson(envelopesJson);
+      opened.unlockWithYubikey(entry.credentialId, secret, encryptedManifest);
+      unlockedVaults[vaultId] = opened;
+      renderVaultNav(Object.keys(vaultNames));
+
+      // Sans effet si l'utilisateur a changé de coffre entre-temps : la
+      // modale bloque déjà toute interaction avec la sidebar tant qu'elle
+      // est ouverte, ce cas ne devrait donc jamais se produire en pratique,
+      // mais autant ne pas réécrire l'UI d'un autre coffre si jamais.
+      if (currentVaultId === vaultId) {
+        vault = opened;
+        setLockedUI(false, `« ${vaultNames[vaultId] ?? vaultId} » déverrouillé`);
+        await refreshFileList();
+        await refreshYubikeyList();
+        await syncPending();
+        await refreshFileList();
+        await refreshRecoveryPhraseOption();
+      }
+
+      stateEl.innerHTML = '<span class="ok">✔ déverrouillé</span>';
+      setTimeout(() => $('unlockOverlay').classList.remove('open'), 450);
+    } catch (e) {
+      keyIcon.classList.remove('waiting');
+      if (e.name === 'AbortError') {
+        stateEl.textContent = '';
+      } else {
+        stateEl.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+        $('btnRetryUnlock').style.display = '';
+      }
+    }
+  }
+
+  $('btnCancelUnlock').addEventListener('click', () => {
+    if (unlockAbortController) unlockAbortController.abort();
+    $('unlockOverlay').classList.remove('open');
+  });
+  $('btnRetryUnlock').addEventListener('click', () => startUnlockCeremony(currentVaultId));
+
+  $('btnUnlockWithPhrase').addEventListener('click', async () => {
+    const out = $('lockOutput');
+    try {
+      const phrase = $('recoveryPhraseInput').value.trim();
+      if (!phrase) throw new Error('phrase de récupération vide');
+
+      out.textContent = 'lecture des enveloppes (réseau, repli cache local si hors ligne)…';
+      const envelopesBytes = await fetchWithCacheFallback(`/vaults/${currentVaultId}/envelopes`, 'envelopes.json');
+      const envelopesJson = new TextDecoder().decode(envelopesBytes);
+
+      out.textContent = 'lecture du manifeste (réseau, repli cache local si hors ligne) et déverrouillage…';
+      const encryptedManifest = await fetchWithCacheFallback(`/vaults/${currentVaultId}/manifest`, 'manifest.enc');
+
+      vault = WasmVault.fromEnvelopesJson(envelopesJson);
+      vault.unlockWithRecoveryPhrase(phrase, encryptedManifest);
+      unlockedVaults[currentVaultId] = vault;
+      $('recoveryPhraseInput').value = '';
+
+      setLockedUI(false, `« ${vaultNames[currentVaultId] ?? currentVaultId} » déverrouillé`);
+      renderVaultNav(Object.keys(vaultNames));
+      await refreshFileList();
+      await refreshYubikeyList();
+      await syncPending();
+      await refreshFileList();
+      await refreshRecoveryPhraseOption();
+      out.innerHTML = '<span class="ok">✔ déverrouillé avec la phrase de récupération (aucune YubiKey nécessaire)</span>';
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  // --- Création de coffre ---
+
+  let pendingNewVault = null; // { id, name, salt, credentialIdB64, secret } le temps de la modale
+
+  $('btnNewVault').addEventListener('click', async () => {
+    pendingNewVault = { id: crypto.randomUUID(), salt: generate_salt() };
+    $('newVaultName').value = '';
+    $('cvStep1').style.display = '';
+    $('cvStep2').style.display = 'none';
+    $('cvStep3').style.display = 'none';
+    $('createVaultOutput').textContent = '';
+    await renderYubikeyChooser($('cvKnownKeys'), pendingNewVault.salt, onPrimaryKeyChosen, $('createVaultOutput'));
+    $('createVaultOverlay').classList.add('open');
+  });
+
+  $('btnRegisterNewKeyForVault').addEventListener('click', async () => {
+    const out = $('createVaultOutput');
+    try {
+      const label = prompt('Nom pour cette YubiKey (facultatif)', 'YubiKey') || 'YubiKey';
+      onPrimaryKeyChosen(await registerNewYubikey(pendingNewVault.salt, label, out));
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  function onPrimaryKeyChosen({ credentialIdB64, secret }) {
+    pendingNewVault.credentialIdB64 = credentialIdB64;
+    pendingNewVault.secret = secret;
+    pendingNewVault.name = $('newVaultName').value.trim() || 'Coffre sans nom';
+    $('cvStep1').style.display = 'none';
+    $('cvStep2').style.display = '';
+  }
+
+  $('btnCancelCreateVault').addEventListener('click', () => {
+    $('createVaultOverlay').classList.remove('open');
+    pendingNewVault = null;
+  });
+
+  async function finalizeVaultCreation() {
+    const out = $('createVaultOutput');
+    out.textContent = 'écriture en cache local puis envoi au serveur…';
+    currentVaultId = pendingNewVault.id;
+    unlockedVaults[currentVaultId] = vault;
+    await writeMetaCacheThenNetwork(pendingNewVault.name);
+    await writeEnvelopesCacheThenNetwork(vault.envelopesJson());
+    await writeManifestCacheThenNetwork(vault.exportEncryptedManifest());
+
+    const idx = await loadVaultsIndex();
+    idx[currentVaultId] = pendingNewVault.name;
+    await saveVaultsIndex(idx);
+    vaultNames[currentVaultId] = pendingNewVault.name;
+
+    $('createVaultOverlay').classList.remove('open');
+    $('noVaultState').style.display = 'none';
+    $('vaultContent').style.display = '';
+    $('breadcrumbName').textContent = pendingNewVault.name;
+    renderVaultNav(Object.keys(vaultNames));
+    setLockedUI(false, `« ${pendingNewVault.name} » créé et déverrouillé`);
+    await refreshFileList();
+    await refreshYubikeyList();
+    await refreshRecoveryPhraseOption();
+    $('lockOutput').innerHTML = '<span class="ok">✔ coffre créé, prêt à recevoir des fichiers</span>';
+    pendingNewVault = null;
+  }
+
+  $('btnConfirmBackupChoice').addEventListener('click', async () => {
+    const out = $('createVaultOutput');
+    const backupChoice = document.querySelector('input[name="backup"]:checked').value;
+    try {
+      currentVaultId = pendingNewVault.id;
+      vault = new WasmVault();
+      vault.addYubikey(pendingNewVault.credentialIdB64, pendingNewVault.salt, pendingNewVault.secret);
+
+      if (backupChoice === 'second-key') {
+        out.textContent = 'enregistrement de la deuxième YubiKey…';
+        const secondSalt = generate_salt();
+        const label = prompt('Nom pour cette deuxième YubiKey', 'YubiKey de secours') || 'YubiKey de secours';
+        const second = await registerNewYubikey(secondSalt, label, out);
+        vault.addYubikey(second.credentialIdB64, secondSalt, second.secret);
+        await finalizeVaultCreation();
+      } else if (backupChoice === 'recovery-phrase') {
+        // Choix figé à la création, jamais reconsultable ensuite (PRD §6.1) :
+        // affiche les 24 mots une seule fois, la finalisation attend l'accusé
+        // de réception plutôt que de continuer tout de suite.
+        const phrase = vault.enableRecoveryPhrase();
+        const words = phrase.split(' ');
+        $('seedGrid').innerHTML = words
+          .map((w, i) => `<span>${String(i + 1).padStart(2, '0')}.</span> ${w}`)
+          .join('');
+        $('cvStep2').style.display = 'none';
+        $('cvStep3').style.display = '';
+      } else {
+        await finalizeVaultCreation();
+      }
+    } catch (e) {
+      out.innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  $('btnAckSeed').addEventListener('click', async () => {
+    $('seedGrid').innerHTML = ''; // les mots ne restent nulle part après confirmation
+    try {
+      await finalizeVaultCreation();
+    } catch (e) {
+      $('createVaultOutput').innerHTML = `<span class="fail">✘ ${e.name ?? 'Erreur'} : ${e.message ?? e}</span>`;
+    }
+  });
+
+  async function boot() {
+    const saved = await loadConnectionSettings();
+    if (saved) sessionToken = saved.sessionToken ?? null;
+
+    if (sessionToken) {
+      // La session peut avoir expiré, ou avoir été invalidée par un
+      // redémarrage du conteneur (sessions en mémoire uniquement, voir
+      // device_auth.rs) : vérifiée par un appel authentifié inoffensif
+      // avant de faire confiance à la valeur sauvegardée.
+      const check = await deviceApi('GET', '/auth/devices').catch(() => null);
+      if (check && check.ok) { await enterApp(); return; }
+      sessionToken = null;
+      await saveConnectionSettings();
+    }
+    await showAuthGate();
+  }
+  boot();
+
+  // --- PWA / service worker (PRD §4, §7.H, étape 9) ---
+  // Ne met en cache que le code de l'app (page, module WASM), jamais les
+  // données de coffre : ça reste le rôle du cache OPFS ci-dessus. Les mises
+  // à jour ne s'appliquent que sur action explicite de l'utilisateur, pas à
+  // chaque ouverture (voir sw.js, qui n'appelle jamais self.skipWaiting()
+  // tout seul).
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
+      const setStatus = (text) => { $('appStatusText').textContent = text; };
+      setStatus(navigator.serviceWorker.controller ? 'app en cache (disponible hors ligne)' : 'mise en cache initiale…');
+
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            $('updateBanner').classList.add('open');
+          }
+        });
+      });
+
+      $('btnCheckUpdate').addEventListener('click', async () => {
+        setStatus('vérification…');
+        try {
+          await reg.update();
+          setStatus(reg.waiting ? 'mise à jour prête' : 'app à jour');
+        } catch {
+          setStatus('vérification impossible (hors ligne ?)');
+        }
+      });
+
+      $('btnApplyUpdate').addEventListener('click', () => {
+        if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+      });
+
+      let reloadedOnce = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadedOnce) return;
+        reloadedOnce = true;
+        location.reload();
+      });
+    }).catch(() => { $('appStatusText').textContent = 'mise en cache indisponible'; });
+  } else {
+    $('appStatusText').textContent = 'non supporté par ce navigateur';
+    $('btnCheckUpdate').disabled = true;
+  }
+</script>
+</body>
+</html>

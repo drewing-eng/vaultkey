@@ -1,0 +1,27 @@
+[package]
+name = "vaultkey-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vaultkey-core = { path = "../core" }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+serde_json = "1.0.151"
+
+# vaultkey-core (via rand/uuid) dépend transitivement de getrandom, qui n'a
+# pas de source d'aléatoire par défaut sur wasm32-unknown-unknown (pas d'OS).
+# Cette feature active le backend Crypto.getRandomValues du navigateur, via
+# wasm-bindgen. Volontairement activée ici, pas dans core/ : getrandom
+# déconseille d'activer wasm_js dans une bibliothèque (ça casserait les
+# builds wasm non-web), seul le crate final cdylib doit le faire.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+# Même raison : uuid (utilisé par core/ pour les blob-id) a besoin qu'on lui
+# désigne explicitement une source d'aléatoire sur wasm32. On le fait pointer
+# vers getrandom plutôt que d'activer sa propre feature "js" séparée, pour
+# ne garder qu'un seul chemin JS d'accès à Crypto.getRandomValues.
+uuid = { version = "1.25.0", features = ["rng-getrandom"] }

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>VaultKey — spike WebAuthn/PRF (étape 3)</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 760px; margin: 40px auto; color: #16161A; line-height: 1.5; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin-top: 36px; }
+  section { border: 1px solid #E6E6E3; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; }
+  button { font-size: 13px; padding: 7px 14px; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  input[type=text] { font-size: 13px; padding: 5px 8px; width: 320px; font-family: ui-monospace, monospace; }
+  label { display: block; font-size: 12.5px; color: #63636A; margin: 10px 0 4px; }
+  pre { background: #F2F2F0; padding: 10px 12px; border-radius: 8px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #1F7A4D; font-weight: 600; }
+  .fail { color: #B3261E; font-weight: 600; }
+  .warn { color: #8A5A12; }
+  .step-disabled { opacity: 0.5; }
+</style>
+</head>
+<body>
+  <h1>VaultKey — spike WebAuthn / extension PRF</h1>
+  <p>Page statique, aucun backend, aucun WASM à cette étape (§9 étape 3 du PRD). Objectif : confirmer empiriquement, sur cette machine et cette YubiKey, que l'extension PRF de WebAuthn se comporte comme prévu par le PRD §7.B/C avant d'y brancher le cœur Rust.</p>
+  <p class="warn" id="secureContextWarning" style="display:none;">⚠️ Ce contexte n'est pas sécurisé (ni https, ni localhost) : WebAuthn refusera de fonctionner.</p>
+
+  <section>
+    <h2>1. Enregistrer la YubiKey</h2>
+    <p>Crée un nouveau credential WebAuthn sur cette clé et vérifie si l'authentificateur annonce le support de PRF.</p>
+    <button id="btnRegister">Enregistrer une YubiKey</button>
+    <pre id="registerOutput">(pas encore lancé)</pre>
+  </section>
+
+  <section class="step-disabled" id="deriveSection">
+    <h2>2. Dériver un secret PRF</h2>
+    <label for="salt1">Sel n°1 (texte libre, converti en octets UTF-8)</label>
+    <input type="text" id="salt1" value="vaultkey-vault-A" />
+    <button id="btnDerive1" disabled>Dériver avec ce sel (touch requis)</button>
+    <pre id="deriveOutput1">(enregistre d'abord une YubiKey)</pre>
+
+    <label for="salt2">Sel n°2, différent — pour vérifier que la sortie change</label>
+    <input type="text" id="salt2" value="vaultkey-vault-B" />
+    <button id="btnDerive2" disabled>Dériver avec ce sel (touch requis)</button>
+    <pre id="deriveOutput2">(pas encore lancé)</pre>
+
+    <button id="btnDeriveAgain" disabled>Redériver avec le sel n°1 (test de déterminisme, touch requis)</button>
+    <pre id="deriveAgainOutput">(pas encore lancé)</pre>
+  </section>
+
+  <section class="step-disabled" id="wasmSection">
+    <h2>3. Envelopper/déballer une clé de test avec le vrai secret PRF (WASM)</h2>
+    <p>Utilise le secret dérivé pour le sel n°1 ci-dessus — déjà en mémoire, pas de nouveau contact avec la clé — pour faire tourner le cœur Rust compilé en WASM (<code>core/</code> via <code>wasm/</code>) : enveloppe une clé maîtresse de test avec ce secret, chiffre un fichier, verrouille, redéballe, déchiffre.</p>
+    <input type="text" id="wasmPlaintext" value="test bout en bout, PRF réel → WASM réel" />
+    <button id="btnWasmRoundtrip" disabled>Lancer le round-trip WASM avec ce secret</button>
+    <pre id="wasmOutput">(dérive d'abord un secret à l'étape 2)</pre>
+  </section>
+
+  <script type="module">
+    import init, { demo_roundtrip } from '../../wasm/pkg/vaultkey_wasm.js';
+
+    if (!window.isSecureContext) {
+      document.getElementById('secureContextWarning').style.display = 'block';
+    }
+
+    let credentialId = null; // ArrayBuffer
+    let prfSupported = null;
+    let lastResults = {}; // salt(text) -> base64(secret)
+    let lastSecretBytes = {}; // salt(text) -> Uint8Array(32) — pour l'étape 3 (WASM)
+
+    await init();
+
+    function toBase64(buf) {
+      return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    }
+    function textToBytes(text) {
+      return new TextEncoder().encode(text);
+    }
+    function randomChallenge() {
+      const c = new Uint8Array(32);
+      crypto.getRandomValues(c);
+      return c;
+    }
+
+    document.getElementById('btnRegister').addEventListener('click', async () => {
+      const out = document.getElementById('registerOutput');
+      out.textContent = 'en attente du contact YubiKey…';
+      try {
+        const cred = await navigator.credentials.create({
+          publicKey: {
+            rp: { name: 'VaultKey spike' },
+            user: {
+              id: crypto.getRandomValues(new Uint8Array(16)),
+              name: 'vaultkey-spike-user',
+              displayName: 'VaultKey spike user',
+            },
+            challenge: randomChallenge(),
+            pubKeyCredParams: [
+              { type: 'public-key', alg: -7 },   // ES256
+              { type: 'public-key', alg: -257 }, // RS256
+            ],
+            authenticatorSelection: { authenticatorAttachment: 'cross-platform' },
+            extensions: { prf: {} },
+            timeout: 60000,
+          },
+        });
+
+        credentialId = cred.rawId;
+        const ext = cred.getClientExtensionResults();
+        prfSupported = ext.prf?.enabled === true;
+
+        out.innerHTML =
+          `credentialId (base64) : ${toBase64(credentialId)}\n` +
+          `extension prf annoncée par le navigateur : ${'prf' in ext ? 'oui' : 'non'}\n` +
+          `prf.enabled : ${ext.prf?.enabled ?? '(absent)'}\n` +
+          (prfSupported
+            ? '<span class="ok">✔ PRF annoncé comme supporté, passe à l\'étape 2</span>'
+            : '<span class="fail">✘ PRF non annoncé supporté par ce navigateur/cette clé pour cette cérémonie — on tente quand même l\'étape 2, le PRD signale des divergences de support</span>');
+
+        document.getElementById('deriveSection').classList.remove('step-disabled');
+        document.getElementById('btnDerive1').disabled = false;
+        document.getElementById('btnDerive2').disabled = false;
+      } catch (e) {
+        out.innerHTML = `<span class="fail">erreur : ${e.name} — ${e.message}</span>`;
+      }
+    });
+
+    async function derive(saltText, outputEl) {
+      outputEl.textContent = 'en attente du contact YubiKey…';
+      try {
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge: randomChallenge(),
+            allowCredentials: [{ id: credentialId, type: 'public-key' }],
+            extensions: { prf: { eval: { first: textToBytes(saltText) } } },
+            timeout: 60000,
+          },
+        });
+        const ext = assertion.getClientExtensionResults();
+        const secret = ext.prf?.results?.first;
+
+        if (!secret) {
+          outputEl.innerHTML = `<span class="fail">✘ aucun résultat PRF retourné (ext.prf = ${JSON.stringify(ext.prf)})</span>`;
+          return null;
+        }
+
+        const secretB64 = toBase64(secret);
+        lastResults[saltText] = secretB64;
+        lastSecretBytes[saltText] = new Uint8Array(secret);
+        outputEl.innerHTML =
+          `sel : "${saltText}"\n` +
+          `secret dérivé (base64, ${secret.byteLength} octets) : ${secretB64}\n` +
+          '<span class="ok">✔ un résultat a bien été retourné</span>';
+        return secretB64;
+      } catch (e) {
+        outputEl.innerHTML = `<span class="fail">erreur : ${e.name} — ${e.message}</span>`;
+        return null;
+      }
+    }
+
+    document.getElementById('btnDerive1').addEventListener('click', async () => {
+      const salt1 = document.getElementById('salt1').value;
+      const secret1 = await derive(salt1, document.getElementById('deriveOutput1'));
+      if (secret1) {
+        document.getElementById('wasmSection').classList.remove('step-disabled');
+        document.getElementById('btnWasmRoundtrip').disabled = false;
+      }
+    });
+
+    document.getElementById('btnDerive2').addEventListener('click', async () => {
+      const salt1 = document.getElementById('salt1').value;
+      const salt2 = document.getElementById('salt2').value;
+      const out2 = document.getElementById('deriveOutput2');
+      const secret2 = await derive(salt2, out2);
+      if (secret2 && lastResults[salt1]) {
+        const differ = secret2 !== lastResults[salt1];
+        out2.innerHTML += `\n${differ
+          ? '<span class="ok">✔ différent du secret du sel n°1, comme attendu</span>'
+          : '<span class="fail">✘ IDENTIQUE au secret du sel n°1 — ne devrait jamais arriver</span>'}`;
+      }
+      document.getElementById('btnDeriveAgain').disabled = false;
+    });
+
+    document.getElementById('btnDeriveAgain').addEventListener('click', async () => {
+      const salt1 = document.getElementById('salt1').value;
+      const outAgain = document.getElementById('deriveAgainOutput');
+      const previous = lastResults[salt1];
+      const again = await derive(salt1, outAgain);
+      if (again) {
+        const same = again === previous;
+        outAgain.innerHTML += `\n${same
+          ? '<span class="ok">✔ identique à la première dérivation avec ce sel — déterminisme confirmé</span>'
+          : '<span class="fail">✘ DIFFÉRENT de la première dérivation avec le même sel — casse une hypothèse fondamentale du PRD (§5.3, §7.D)</span>'}`;
+      }
+    });
+
+    document.getElementById('btnWasmRoundtrip').addEventListener('click', () => {
+      const salt1 = document.getElementById('salt1').value;
+      const secretBytes = lastSecretBytes[salt1];
+      const plaintext = document.getElementById('wasmPlaintext').value;
+      const out = document.getElementById('wasmOutput');
+
+      if (!secretBytes) {
+        out.innerHTML = '<span class="fail">✘ aucun secret dérivé pour ce sel, relance l\'étape 2 d\'abord</span>';
+        return;
+      }
+
+      try {
+        const result = demo_roundtrip(secretBytes, plaintext);
+        const ok = result === plaintext;
+        out.innerHTML =
+          `entrée : ${plaintext}\n` +
+          `sortie déchiffrée : ${result}\n` +
+          `${ok
+            ? '<span class="ok">✔ round-trip identique — vrai secret PRF utilisé pour envelopper/déballer une clé de test dans le WASM réel</span>'
+            : '<span class="fail">✘ mismatch inattendu</span>'}`;
+      } catch (e) {
+        out.innerHTML = `<span class="fail">erreur WASM : ${e}</span>`;
+      }
+    });
+  </script>
+</body>
+</html>

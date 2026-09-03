@@ -1,0 +1,9 @@
+# Artefacts de build Rust (core/, wasm/, server/)
+target/
+
+# Build wasm-pack (régénéré par `wasm-pack build`, ou par le stage
+# wasm-builder du Dockerfile) : pas la peine de le versionner.
+wasm/pkg/
+
+# macOS
+.DS_Store
